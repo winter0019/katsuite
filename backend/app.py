@@ -228,6 +228,66 @@ def me():
     u=g.user
     return jsonify(user={'id':u['id'],'full_name':u['full_name'],'username':u['username'],'role':u['role'],'branch_id':u['branch_id'],'branch_name':u['branch_name']})
 
+
+# User management API required by the frontend Users & Branches page.
+@app.get('/api/users')
+@require_roles('State Coordinator Admin')
+def users_list():
+    with db() as conn:
+        rows = conn.execute('''SELECT u.id,u.full_name,u.username,u.role,u.branch_id,
+            u.active,b.name AS branch_name,u.created_at
+            FROM users u LEFT JOIN branches b ON b.id=u.branch_id
+            ORDER BY u.full_name''').fetchall()
+    return jsonify(users=rows)
+
+
+@app.post('/api/users')
+@require_roles('State Coordinator Admin')
+def users_create():
+    data = request.get_json(silent=True) or {}
+    full_name = str(data.get('full_name') or '').strip()
+    username = str(data.get('username') or '').strip()
+    password = str(data.get('password') or '')
+    role = str(data.get('role') or '').strip()
+    branch_id = data.get('branch_id')
+    if not full_name or not username or not password or not role:
+        return jsonify(error='Full name, username, password and role are required.'), 400
+    if role not in ROLES:
+        return jsonify(error='Invalid user role.'), 400
+    if len(password) < 8:
+        return jsonify(error='Password must be at least 8 characters.'), 400
+    try:
+        with db() as conn:
+            row = conn.execute('''INSERT INTO users(full_name,username,password_hash,role,branch_id)
+                VALUES(%s,%s,%s,%s,%s)
+                RETURNING id,full_name,username,role,branch_id,active,created_at''',
+                (full_name,username,pw_hash(password),role,branch_id)).fetchone()
+            branch = conn.execute('SELECT name FROM branches WHERE id=%s',(branch_id,)).fetchone() if branch_id else None
+        result = dict(row)
+        result['branch_name'] = branch['name'] if branch else None
+        audit('create','user',result['id'],f"Created account {username} with role {role}")
+        return jsonify(user=result), 201
+    except psycopg.errors.UniqueViolation:
+        return jsonify(error='That username already exists.'), 409
+
+
+@app.patch('/api/users/<int:user_id>')
+@require_roles('State Coordinator Admin')
+def users_update(user_id):
+    data = request.get_json(silent=True) or {}
+    if 'active' not in data:
+        return jsonify(error='The active field is required.'), 400
+    if user_id == g.user['id'] and not data['active']:
+        return jsonify(error='You cannot disable your own account.'), 400
+    with db() as conn:
+        row = conn.execute('UPDATE users SET active=%s WHERE id=%s RETURNING id,username,active',
+                           (bool(data['active']),user_id)).fetchone()
+    if not row:
+        return jsonify(error='User not found.'), 404
+    audit('update','user',user_id,'Account active status changed')
+    return jsonify(user=row,message='User account updated.')
+
+
 @app.get('/api/branches')
 @require_roles(*ALL_READ_ROLES)
 def branches_list():
