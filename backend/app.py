@@ -133,28 +133,42 @@ def require_roles(*roles):
 
 
 def office_scope_sql(user, alias='f'):
+    """Limit each office to files currently in its custody; Registry retains global tracking."""
     role = user['role']
     office = (user.get('branch_name') or '').strip()
-    
-    # Rule 5 & 4: Central Registry can see all files/circulation globally.
-    if role in ('State Coordinator Admin', 'Central Registry'):
-        return 'TRUE', []
-    
-    # Rule 8: LGIs can search all registered files (to support cross-LGA lookup like Bakori viewing Rimi), 
-    # but write restrictions prevent them from submitting or modifying movements.
-    if role == 'Local Government Inspector':
+
+    # Central Registry is the system-wide registry and can track all registered files.
+    if role == 'Central Registry' or (role == 'Registry Officer' and office == 'Central Registry'):
         return 'TRUE', []
 
-    if role in ('Branch Head', 'Registry Officer'):
+    # The State Coordinator register contains only files currently submitted to that office.
+    if role == 'State Coordinator Admin':
+        return f"{alias}.current_location=%s", ['State Coordinator Office']
+
+    # LGIs see files currently held by their assigned LGA office.
+    if role == 'Local Government Inspector':
         if not office:
             return 'FALSE', []
-        return (f"({alias}.current_location=%s OR {alias}.originating_office=%s OR EXISTS (SELECT 1 FROM movements sm WHERE sm.file_id={alias}.id AND sm.to_location=%s))", [office, office, office])
-    
+        return f"{alias}.current_location=%s", [office]
+
+    # Branches see files currently held by their assigned branch/unit.
+    if role == 'Branch Head':
+        if not office:
+            return 'FALSE', []
+        return f"{alias}.current_location=%s", [office]
+
+    # ZIs see files currently held by their assigned zonal office.
     if role == 'Zonal Inspector':
         if not office:
             return 'FALSE', []
-        return (f"({alias}.current_location=%s OR {alias}.originating_office IN (SELECT name FROM branches WHERE branch_type='LGA Office' AND location=%s) OR EXISTS (SELECT 1 FROM movements sm WHERE sm.file_id={alias}.id AND (sm.to_location=%s OR sm.to_location IN (SELECT name FROM branches WHERE branch_type='LGA Office' AND location=%s))))", [office, office, office, office])
-    
+        return f"{alias}.current_location=%s", [office]
+
+    # Other registry officers are limited to their assigned office unless central registry.
+    if role == 'Registry Officer':
+        if not office:
+            return 'FALSE', []
+        return f"{alias}.current_location=%s", [office]
+
     return 'FALSE', []
 
 
@@ -284,7 +298,7 @@ def file_detail(file_id):
 
 # --- Rule 6: Other offices search corps member files using state code and forward appropriately ---
 @app.post('/api/files/<int:file_id>/forward')
-@require_roles('Branch Head', 'Registry Officer', 'State Coordinator Admin', 'Zonal Inspector')
+@require_roles('Local Government Inspector', 'Branch Head', 'Registry Officer', 'State Coordinator Admin', 'Zonal Inspector')
 def forward_file(file_id):
     u = g.user
     # LGIs are explicitly blocked from submitting or forwarding files (Rule 8)
