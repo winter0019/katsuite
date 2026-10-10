@@ -44,7 +44,13 @@ function showApp() {
     const isRegistry = ['Central Registry', 'Registry Officer'].includes(currentUser.role);
     
     $('#dashboardGreeting').textContent = isAdmin ? 'State Coordinator’s Office — state-wide overview' : isRegistry ? 'Central Registry — dispatch and custody control' : 'Office File Dashboard — assigned file activity';
-    $('#dashboardDescription').textContent = isAdmin ? 'Oversee branches, Zonal Inspectors and LGIs; monitor files received for treatment, treated files and returns to originating offices or Central Registry.' : isRegistry ? 'Manage physical file custody: dispatch files to branches and field offices, record acknowledgements, process returns and identify overdue or unacknowledged files.' : 'Track files assigned to your office, confirm receipt and monitor returns and due dates.';          const recentTitle = document.querySelector('#recentRows')?.closest('.panel')?.querySelector('h3');     if (recentTitle) recentTitle.textContent = isAdmin ? 'Recent state-wide file activity' : isRegistry ? 'Files in Circulation / Custody' : 'Recent registry activity';          goto('dashboard');     loadAllBase().then(loadDashboard).catch(e => notify(e.message, true)); }  function goto(page) {     $$('.page').forEach(e => e.classList.add('hidden'));
+    $('#dashboardDescription').textContent = isAdmin ? 'Oversee branches, Zonal Inspectors and LGIs; monitor files received for treatment, treated files and returns to originating offices or Central Registry.' : isRegistry ? 'Manage physical file custody: dispatch files to branches and field offices, record acknowledgements, process returns and identify overdue or unacknowledged files.' : 'Track files assigned to your office, confirm receipt and monitor returns and due dates.';
+    
+    const labels = isAdmin ? ['Files under state oversight', 'Files registered today', 'Treated/returned today', 'Files with offices', 'Overdue treatment/returns', 'Awaiting office acknowledgement'] : ['Total registered files', 'Collected today', 'Returned today', 'In circulation', 'Overdue', 'Awaiting acknowledgement'];
+    const small = isAdmin ? ['All state-wide records', 'New files recorded today', 'Confirmed treatment/returns', 'Currently outside registry', 'Past agreed return date', 'Dispatch not yet confirmed'] : ['All active records', 'Files registered today', 'Confirmed returns', 'Issued and acknowledged', 'Past agreed return date', 'Dispatched, not confirmed'];
+    
+    $$('.stat-card').forEach((card, i) => {         if (labels[i]) card.querySelector('span').textContent = labels[i];         if (small[i]) card.querySelector('small').textContent = small[i];     });          const locTitle = document.querySelector('#locationList')?.closest('.panel')?.querySelector('h3');     if (locTitle) locTitle.textContent = isAdmin ? 'Files by office / current location' : 'Files by current location';          const recentTitle = document.querySelector('#recentRows')?.closest('.panel')?.querySelector('h3');     if (recentTitle) recentTitle.textContent = isAdmin ? 'Recent state-wide file activity' : 'Recent registry activity';          goto('dashboard');     loadAllBase().then(loadDashboard).catch(e => notify(e.message, true)); }  function goto(page) {     $$
+('.page').forEach(e => e.classList.add('hidden'));
     $('#page-' + page)?.classList.remove('hidden');     $$('.nav-link').forEach(e => e.classList.toggle('active', e.dataset.page === page));$('#pageTitle').textContent = pageNames[page] || 'Operations Suite';
     if (page === 'files') loadFiles();
     if (page === 'users') loadUsers();
@@ -82,67 +88,22 @@ async function loadAllBase() {
 
 async function loadDashboard() {
     try {
-        const user = currentUser;
-        const isAdmin = user.role === 'State Coordinator Admin';
-        const isRegistry = ['Central Registry', 'Registry Officer'].includes(user.role);
-        const cards = $$('.stat-card');
-
-        cards.forEach(c => c.style.display = '');
-
-        if (isAdmin) {
-            const d = await api('/api/state-coordinator/dashboard');
-            const m = d.metrics || {};
-            
-            if (cards[0]) { cards[0].querySelector('span').textContent = 'Total Received Files'; cards[0].querySelector('strong').textContent = m.total_received ?? 0; cards[0].querySelector('small').textContent = 'State-wide total'; }
-            if (cards[1]) { cards[1].querySelector('span').textContent = 'Treated Files'; cards[1].querySelector('strong').textContent = m.treated_files ?? 0; cards[1].querySelector('small').textContent = 'Processed / active'; }
-            if (cards[2]) { cards[2].querySelector('span').textContent = 'Untreated Files'; cards[2].querySelector('strong').textContent = m.untreated_files ?? 0; cards[2].querySelector('small').textContent = 'Awaiting treatment'; }
-            if (cards[3]) { cards[3].querySelector('span').textContent = 'Returned Files'; cards[3].querySelector('strong').textContent = m.returned_files ?? 0; cards[3].querySelector('small').textContent = 'Returned to registry'; }
-            if (cards[4]) { cards[4].querySelector('span').textContent = 'Put Away Files'; cards[4].querySelector('strong').textContent = m.put_away_files ?? 0; cards[4].querySelector('small').textContent = 'Archived / closed'; }
-            if (cards[5]) { cards[5].style.display = 'none'; }
-
-            const dashData = await api('/api/dashboard');
-            const loc = dashData.by_location || [], max = Math.max(1, ...loc.map(x => Number(x.count)));
-            $('#locationList').innerHTML = loc.length ? loc.map(x => `<div class="location-item"><strong>${esc(x.location)}</strong><span>${x.count} files</span><div class="bar"><span style="width:${Math.max(2, Number(x.count) / max * 100)}%"></span></div></div>`).join('') : '<p class="muted">No file records yet.</p>';
-            const recent = dashData.recent || [];
-            $('#recentRows').innerHTML = recent.length ? recent.map(f => `<tr><td><strong>${esc(f.reference_no)}</strong><span class="table-sub">${esc(f.state_code || 'No State Code')}</span></td><td>${esc(f.title)}</td><td>${statusPill(f.computed_status)}</td></tr>`).join('') : '<tr><td colspan="3" class="empty">No files registered yet.</td></tr>';
-            $('#lastUpdated').textContent = 'Dashboard refreshed ' + date(dashData.generated_at);
-
-        } else if (isRegistry) {
-            const d = await api('/api/registry/dashboard');
-            const s = d.stats || {};
-            
-            if (cards[0]) { cards[0].querySelector('span').textContent = 'Total Collected Files'; cards[0].querySelector('strong').textContent = s.total_collected ?? 0; cards[0].querySelector('small').textContent = 'All registered records'; }
-            if (cards[1]) { cards[1].querySelector('span').textContent = 'Returned Files'; cards[1].querySelector('strong').textContent = s.returned_files ?? 0; cards[1].querySelector('small').textContent = 'Confirmed returns'; }
-            if (cards[2]) { cards[2].querySelector('span').textContent = 'Acknowledged Files'; cards[2].querySelector('strong').textContent = s.acknowledged_files ?? 0; cards[2].querySelector('small').textContent = 'Active in circulation'; }
-            if (cards[3]) { cards[3].querySelector('span').textContent = 'Overdue Files'; cards[3].querySelector('strong').textContent = s.overdue_files ?? 0; cards[3].querySelector('small').textContent = 'Exceeded return timeline'; }
-            for (let i = 4; i < cards.length; i++) cards[i].style.display = 'none';
-
-            const circulation = d.circulation || [];
-            const locMap = {};
-            circulation.forEach(f => { locMap[f.current_location] = (locMap[f.current_location] || 0) + 1; });
-            const locArr = Object.entries(locMap).map(([location, count]) => ({ location, count }));
-            const max = Math.max(1, ...locArr.map(x => Number(x.count)));
-            
-            $('#locationList').innerHTML = locArr.length ? locArr.map(x => `<div class="location-item"><strong>${esc(x.location)}</strong><span>${x.count} files</span><div class="bar"><span style="width:${Math.max(2, Number(x.count) / max * 100)}%"></span></div></div>`).join('') : '<p class="muted">No files in circulation.</p>';
-            $('#recentRows').innerHTML = circulation.length ? circulation.slice(0, 8).map(f => `<tr><td><strong>${esc(f.reference_no)}</strong><span class="table-sub">${esc(f.state_code || 'No State Code')}</span></td><td>${esc(f.title)}</td><td>${esc(f.current_location)}</td><td>${statusPill(f.status)}</td></tr>`).join('') : '<tr><td colspan="4" class="empty">No files in circulation.</td></tr>';
-            $('#lastUpdated').textContent = 'Dashboard refreshed ' + date(new Date());
-
-        } else {
-            const d = await api('/api/dashboard');
-            const c = d.counts || {};
-            $('#statTotal').textContent = c.total_files ?? 0;
-            $('#statCollected').textContent = c.registered_today ?? 0;
-            $('#statReturned').textContent = c.returned_today ?? 0;
-            $('#statCirculating').textContent = c.circulating ?? 0;
-            $('#statOverdue').textContent = c.overdue ?? 0;
-            $('#statUnack').textContent = c.unacknowledged ?? 0;
-            
-            const loc = d.by_location || [], max = Math.max(1, ...loc.map(x => Number(x.count)));
-            $('#locationList').innerHTML = loc.length ? loc.map(x => `<div class="location-item"><strong>${esc(x.location)}</strong><span>${x.count} files</span><div class="bar"><span style="width:${Math.max(2, Number(x.count) / max * 100)}%"></span></div></div>`).join('') : '<p class="muted">No file records yet.</p>';
-            const recent = d.recent || [];
-            $('#recentRows').innerHTML = recent.length ? recent.map(f => `<tr><td><strong>${esc(f.reference_no)}</strong><span class="table-sub">${esc(f.state_code || 'No State Code')}</span></td><td>${esc(f.title)}</td><td>${statusPill(f.computed_status)}</td></tr>`).join('') : '<tr><td colspan="3" class="empty">No files registered yet.</td></tr>';
-            $('#lastUpdated').textContent = 'Dashboard refreshed ' + date(d.generated_at);
-        }
+        const d = await api('/api/dashboard');
+        const c = d.counts || {};
+        $('#statTotal').textContent = c.total_files ?? 0;
+        $('#statCollected').textContent = c.registered_today ?? 0;
+        $('#statReturned').textContent = c.returned_today ?? 0;
+        $('#statCirculating').textContent = c.circulating ?? 0;
+        $('#statOverdue').textContent = c.overdue ?? 0;
+        $('#statUnack').textContent = c.unacknowledged ?? 0;
+        
+        const loc = d.by_location || [], max = Math.max(1, ...loc.map(x => Number(x.count)));
+        $('#locationList').innerHTML = loc.length ? loc.map(x => `<div class="location-item"><strong>${esc(x.location)}</strong><span>${x.count} files</span><div class="bar"><span style="width:${Math.max(2, Number(x.count) / max * 100)}%"></span></div></div>`).join('') : '<p class="muted">No file records yet.</p>';
+        
+        const recent = d.recent || [];
+        $('#recentRows').innerHTML = recent.length ? recent.map(f => `<tr><td><strong>${esc(f.reference_no)}</strong><span class="table-sub">${esc(f.state_code || 'No State Code')}</span></td><td>${esc(f.title)}</td><td>${statusPill(f.computed_status)}</td></tr>`).join('') : '<tr><td colspan="3" class="empty">No files registered yet.</td></tr>';
+        
+        $('#lastUpdated').textContent = 'Dashboard refreshed ' + date(d.generated_at);
     } catch (e) { notify(e.message, true); }
 }
 
