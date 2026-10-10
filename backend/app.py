@@ -9,7 +9,16 @@ from psycopg.rows import dict_row
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', '')
 FRONTEND_ORIGIN = os.environ.get('FRONTEND_ORIGIN', '*')
-CORS(app, resources={r"/api/*": {"origins": [x.strip() for x in FRONTEND_ORIGIN.split(',') if x.strip()] or ['*']}})
+CORS(
+    app,
+    resources={r"/api/*": {
+        "origins": [x.strip() for x in FRONTEND_ORIGIN.split(',') if x.strip()] or ["*"],
+        "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        "allow_headers": ["Authorization", "Content-Type"],
+        "max_age": 86400,
+    }},
+    supports_credentials=False,
+)
 
 ROLES = {'State Coordinator Admin', 'Central Registry', 'Branch Head', 'Registry Officer', 'Zonal Inspector', 'Local Government Inspector', 'Read-only Auditor'}
 ADMIN_ROLES = {'State Coordinator Admin'}
@@ -186,6 +195,9 @@ def get_json(): return request.get_json(silent=True) or {}
 
 @app.before_request
 def boot():
+    # CORS preflight requests must not require database availability or authentication.
+    if request.method == 'OPTIONS':
+        return ('', 204)
     if request.path.startswith('/api/') and request.path != '/api/health':
         try: init_db()
         except Exception as exc: app.logger.exception('Database initialization failed')
