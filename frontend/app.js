@@ -42,6 +42,12 @@ function showApp() {
     
     const isAdmin = currentUser.role === 'State Coordinator Admin';
     const isRegistry = ['Central Registry', 'Registry Officer'].includes(currentUser.role);
+
+    // Registration controls are visible only to Central Registry roles.
+    $$('[data-registry-only]').forEach(el => {
+        el.classList.toggle('hidden', !isRegistry);
+        el.setAttribute('aria-hidden', String(!isRegistry));
+    });
     
     $('#dashboardGreeting').textContent = isAdmin ? 'State Coordinator’s Office — state-wide overview' : isRegistry ? 'Central Registry — dispatch and custody control' : 'Office File Dashboard — assigned file activity';
     $('#dashboardDescription').textContent = isAdmin ? 'Oversee branches, Zonal Inspectors and LGIs; monitor files received for treatment, treated files and returns to originating offices or Central Registry.' : isRegistry ? 'Manage physical file custody: dispatch files to branches and field offices, record acknowledgements, process returns and identify overdue or unacknowledged files.' : 'Track files assigned to your office, confirm receipt and monitor returns and due dates.';
@@ -49,7 +55,12 @@ function showApp() {
     const labels = isAdmin ? ['Files under state oversight', 'Files registered today', 'Treated/returned today', 'Files with offices', 'Overdue treatment/returns', 'Awaiting office acknowledgement'] : ['Total registered files', 'Collected today', 'Returned today', 'In circulation', 'Overdue', 'Awaiting acknowledgement'];
     const small = isAdmin ? ['All state-wide records', 'New files recorded today', 'Confirmed treatment/returns', 'Currently outside registry', 'Past agreed return date', 'Dispatch not yet confirmed'] : ['All active records', 'Files registered today', 'Confirmed returns', 'Issued and acknowledged', 'Past agreed return date', 'Dispatched, not confirmed'];
     
-    $$('.stat-card').forEach((card, i) => {         if (labels[i]) card.querySelector('span').textContent = labels[i];         if (small[i]) card.querySelector('small').textContent = small[i];     });          const locTitle = document.querySelector('#locationList')?.closest('.panel')?.querySelector('h3');     if (locTitle) locTitle.textContent = isAdmin ? 'Files by office / current location' : 'Files by current location';          const recentTitle = document.querySelector('#recentRows')?.closest('.panel')?.querySelector('h3');     if (recentTitle) recentTitle.textContent = isAdmin ? 'Recent state-wide file activity' : 'Recent registry activity';          goto('dashboard');     loadAllBase().then(loadDashboard).catch(e => notify(e.message, true)); }  function goto(page) {     $$
+    $$('.stat-card').forEach((card, i) => {         if (labels[i]) card.querySelector('span').textContent = labels[i];         if (small[i]) card.querySelector('small').textContent = small[i];     });          const locTitle = document.querySelector('#locationList')?.closest('.panel')?.querySelector('h3');     if (locTitle) locTitle.textContent = isAdmin ? 'Files by office / current location' : 'Files by current location';          const recentTitle = document.querySelector('#recentRows')?.closest('.panel')?.querySelector('h3');     if (recentTitle) recentTitle.textContent = isAdmin ? 'Recent state-wide file activity' : 'Recent registry activity';          goto('dashboard');     loadAllBase().then(loadDashboard).catch(e => notify(e.message, true)); }  function goto(page) {
+    const isRegistry = !!currentUser && ['Central Registry', 'Registry Officer'].includes(currentUser.role);
+    if (page === 'register' && !isRegistry) {
+        notify('Only Central Registry staff can register files.', true);
+        page = 'files';
+    }     $$
 ('.page').forEach(e => e.classList.add('hidden'));
     $('#page-' + page)?.classList.remove('hidden');     $$('.nav-link').forEach(e => e.classList.toggle('active', e.dataset.page === page));$('#pageTitle').textContent = pageNames[page] || 'Operations Suite';
     if (page === 'files') loadFiles();
@@ -66,26 +77,11 @@ const zoneLGIs = {
 };
 
 function refreshDestinationOptions() {
-    const categoryEl = $('#destinationCategory');
-    const zoneEl = $('#destinationZone');
-    const officeEl = $('#destinationOffice');
-    if (!categoryEl || !officeEl) return;
-
-    const cat = categoryEl.value || 'branch';
-    const zone = zoneEl?.value || 'Katsina Zone';
-
+    const cat = $('#destinationCategory')?.value \vert{}\vert{} 'branch', zone = $('#destinationZone')?.value || 'Katsina Zone';
     $('#destinationZoneWrap')?.classList.toggle('hidden', cat !== 'lgi');
-
-    const names = cat === 'lgi'
-        ? (zoneLGIs[zone] || [])
-        : ['State Coordinator Office', 'Central Registry', 'CIM', 'CW&HS', 'CDS', 'Other Secretariat Branch/Unit'];
-
-    const previous = officeEl.value;
-    officeEl.innerHTML = names.map(name =>
-        `<option value="${esc(name)}">${esc(name)}</option>`
-    ).join('');
-
-    if (names.includes(previous)) officeEl.value = previous;
+    const names = cat === 'lgi' ? (zoneLGIs[zone] || []) : ['State Coordinator Office', 'Central Registry', 'CIM', 'CW&HS', 'CDS', 'Other Secretariat Branch/Unit'];
+    const sel = $('#destinationOffice');
+    if (sel) sel.innerHTML = names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
 }
 
 async function loadAllBase() {
@@ -139,7 +135,7 @@ async function loadFiles() {
 async function openFile(id) {
     try {
         const d = await api('/api/files/' + id), f = d.file, m = d.movements || [];
-        $('#modalContent').innerHTML = `<p class="eyebrow">FILE TRACKING RECORD</p><h3>${esc(f.reference_no)} · ${esc(f.title)}</h3><p class="muted">${esc(f.subject || 'No additional subject provided')}</p><div class="detail-grid"><div class="detail-box"><span>Corps Member State Code</span><strong>${esc(f.state_code || 'Not recorded')}</strong></div><div class="detail-box"><span>Current status</span><strong>${statusPill(f.computed_status)}</strong></div><div class="detail-box"><span>Current location</span><strong>${esc(f.current_location)}</strong></div><div class="detail-box"><span>Current holder</span><strong>${esc(f.current_holder)}</strong></div><div class="detail-box"><span>Originating office</span><strong>${esc(f.originating_office)}</strong></div><div class="detail-box"><span>Return due</span><strong>${dateOnly(f.due_at)}</strong></div></div><h4>Movement history</h4><div class="table-wrap"><table><thead><tr><th>Action / time</th><th>From</th><th>To</th><th>Sender / recipient</th><th>Receipt</th><th>Due</th></tr></thead><tbody>${m.map(x => `<tr><td>${esc(x.action)}<span class="table-sub">${date(x.dispatched_at)}</span></td><td>${esc(x.from_location || '—')}</td><td>${esc(x.to_location || '—')}</td><td>${esc(x.sender || '—')}<span class="table-sub">${esc(x.recipient || '—')}</span></td><td>${x.acknowledged_at ? date(x.acknowledged_at) : '<span class="pill awaiting">Awaiting</span>'}</td><td>${dateOnly(x.due_at)}</td></tr>`).join('') || '<tr><td colspan="6">No movement history.</td></tr>'}</tbody></table></div><div class="inline-form"><label>Destination<select id="dispatchLocation" class="modal-locations"></select></label><label>Receiving officer<input id="dispatchRecipient" placeholder="Full name"></label><label>Return due date<input id="dispatchDue" type="date"></label><button class="primary" id="dispatchBtn">Dispatch file</button></div><div class="inline-form"><label>Return location<select id="returnLocation" class="modal-locations"></select></label><label>Received by<input id="returnRecipient" value="Central Registry"></label><button class="secondary" id="returnBtn">Record return</button></div><div class="inline-form"><button class="secondary" id="ackBtn">Acknowledge latest delivery</button></div>`;
+        $('#modalContent').innerHTML = `<p class="eyebrow">FILE TRACKING RECORD</p><h3>${esc(f.reference_no)} · ${esc(f.title)}</h3><p class="muted">${esc(f.subject || 'No additional subject provided')}</p><div class="detail-grid"><div class="detail-box"><span>Corps Member State Code</span><strong>${esc(f.state_code || 'Not recorded')}</strong></div><div class="detail-box"><span>Current status</span><strong>${statusPill(f.computed_status)}</strong></div><div class="detail-box"><span>Current location</span><strong>${esc(f.current_location)}</strong></div><div class="detail-box"><span>Current holder</span><strong>${esc(f.current_holder)}</strong></div><div class="detail-box"><span>Originating office</span><strong>${esc(f.originating_office)}</strong></div><div class="detail-box"><span>Return due</span><strong>${dateOnly(f.due_at)}</strong></div></div><h4>Movement history</h4><div class="table-wrap"><table><thead><tr><th>Action / time</th><th>From</th><th>To</th><th>Sender / recipient</th><th>Receipt</th><th>Due</th></tr></thead><tbody>${m.map(x => `<tr><td>${esc(x.action)}<span class="table-sub">${date(x.dispatched_at)}</span></td><td>${esc(x.from_location || '—')}</td><td>${esc(x.to_location \vert{}\vert{} '—')}</td><td>${esc(x.sender || '—')}<span class="table-sub">${esc(x.recipient || '—')}</span></td><td>${x.acknowledged_at ? date(x.acknowledged_at) : '<span class="pill awaiting">Awaiting</span>'}</td><td>${dateOnly(x.due_at)}</td></tr>`).join('') || '<tr><td colspan="6">No movement history.</td></tr>'}</tbody></table></div><div class="inline-form"><label>Destination<select id="dispatchLocation" class="modal-locations"></select></label><label>Receiving officer<input id="dispatchRecipient" placeholder="Full name"></label><label>Return due date<input id="dispatchDue" type="date"></label><button class="primary" id="dispatchBtn">Dispatch file</button></div><div class="inline-form"><label>Return location<select id="returnLocation" class="modal-locations"></select></label><label>Received by<input id="returnRecipient" value="Central Registry"></label><button class="secondary" id="returnBtn">Record return</button></div><div class="inline-form"><button class="secondary" id="ackBtn">Acknowledge latest delivery</button></div>`;
         const locs = await api('/api/branches');
         const opts = (locs.branches || []).map(b => `<option value="${esc(b.name)}">${esc(b.name)}</option>`).join('');
         $$('.modal-locations').forEach(s => s.innerHTML = opts);$('#dispatchBtn').onclick = async () => {
