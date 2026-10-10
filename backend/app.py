@@ -11,7 +11,7 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', '')
 FRONTEND_ORIGIN = os.environ.get('FRONTEND_ORIGIN', '*')
 CORS(app, resources={r"/api/*": {"origins": [x.strip() for x in FRONTEND_ORIGIN.split(',') if x.strip()] or ['*']}})
 
-ROLES = {'State Coordinator Admin', 'Central Registry', 'Branch Head', 'Registry Officer', 'Read-only Auditor'}
+ROLES = {'State Coordinator Admin', 'Central Registry', 'Branch Head', 'Registry Officer', 'Zonal Inspector', 'Local Government Inspector', 'Read-only Auditor'}
 ADMIN_ROLES = {'State Coordinator Admin'}
 REGISTRY_ROLES = {'State Coordinator Admin', 'Central Registry', 'Registry Officer'}
 ALL_READ_ROLES = ROLES
@@ -72,8 +72,20 @@ def init_db():
             ('Central Registry','Registry','Katsina State Secretariat'),
             ('CIM','Secretariat Branch','Katsina State Secretariat'),
             ('CW&HS','Secretariat Branch','Katsina State Secretariat'),
-            ('CDS','Secretariat Branch','Katsina State Secretariat')]:
+            ('CDS','Secretariat Branch','Katsina State Secretariat'),
+            ('Other Secretariat Branch/Unit','Secretariat Branch','Katsina State Secretariat')]:
             conn.execute('INSERT INTO branches(name, branch_type, location) VALUES (%s,%s,%s) ON CONFLICT(name) DO NOTHING', (name,kind,loc))
+        # Seed the approved zonal destinations. Existing branch records are preserved.
+        zone_lgis = {
+            'Katsina Zone': ['Katsina A','Katsina B','Batagarawa','Rimi','Charanchi','Kaita','Jibia'],
+            'Daura Zone': ['Daura','Baure','Mani','Mashi','Dutsi','Bindawa','Zango','Sandamu','Maiadua'],
+            'Funtua Zone': ['Funtua','Malumfashi','Bakori','Danja'],
+            'Dutsin-Ma Zone': ['Dutsin-Ma','Ingawa','Kusada','Kankia']
+        }
+        for zone, lgis in zone_lgis.items():
+            conn.execute('INSERT INTO branches(name,branch_type,location) VALUES (%s,%s,%s) ON CONFLICT(name) DO NOTHING', (zone,'Zonal Office',zone))
+            for lgi in lgis:
+                conn.execute('INSERT INTO branches(name,branch_type,location) VALUES (%s,%s,%s) ON CONFLICT(name) DO NOTHING', (lgi,'LGA Office',zone))
 
 
 def audit(action, entity_type, entity_id='', details=''):
@@ -239,6 +251,14 @@ def file_create():
             row=conn.execute('''INSERT INTO files(id,reference_no,title,subject,state_code,originating_office,current_location,current_holder,registered_by,due_at,notes)
                 VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *''', (seq,ref,d['title'].strip(),d.get('subject','').strip(),d.get('state_code','').strip().upper(),d['originating_office'].strip(),d.get('current_location','Central Registry').strip(),g.user['full_name'],g.user['id'],d.get('due_at') or None,d.get('notes','').strip())).fetchone()
             conn.execute("INSERT INTO movements(file_id,action,from_location,to_location,sender,recipient,acknowledged_at,created_by,remarks) VALUES(%s,'REGISTERED','','%s','%s','%s',now(),%s,'Initial file registration')", (seq,row['current_location'],d['originating_office'],g.user['full_name'],g.user['id']))
+            # If a destination is selected during registration, create a tracked dispatch from Central Registry.
+            destination=(d.get('destination_office') or '').strip()
+            if destination:
+                recipient=(d.get('recipient') or '').strip() or 'Receiving officer to be confirmed'
+                due=d.get('due_at') or None
+                conn.execute("INSERT INTO movements(file_id,action,from_location,to_location,sender,recipient,due_at,remarks,created_by) VALUES(%s,'DISPATCHED',%s,%s,%s,%s,%s,%s,%s)", (seq,row['current_location'],destination,g.user['full_name'],recipient,due,'Dispatched from Central Registry; awaiting acknowledgement',g.user['id']))
+                conn.execute("UPDATE files SET current_location=%s,current_holder=%s,status='In Transit',due_at=%s WHERE id=%s", (destination,recipient,due,seq))
+                row['current_location']=destination; row['current_holder']=recipient; row['status']='In Transit'; row['due_at']=due
         except Exception: raise
     audit('register','file',row['id'],ref); return jsonify(file=row),201
 
