@@ -45,3 +45,14 @@ Separate state-level application for Central Registry and Secretariat file track
 - The dashboard is live from database queries on refresh. WebSocket/push updates can be added after the core workflow is approved.
 - The backend applies server-side role checks. Hiding a frontend menu is not treated as security.
 - No KATZIMS database credentials or direct cross-database access are required for Phase 1.
+
+
+## Functional update: dashboards and destinations
+
+- The State Coordinator Admin role retains account/branch administration and is presented with state-wide operational dashboard messaging.
+- Added Zonal Inspector and Local Government Inspector account roles.
+- Seeded the four zone records and requested LGI destinations in the separate Operations Suite database.
+- File registration now includes destination category and destination office selectors; selecting Zonal Offices/LGIs reveals a zone selector and the LGIs for that zone.
+- Updated frontend styling to align more closely with KATZIMS' deep-green/mint visual language.
+
+The uploaded KATZIMS project is a reference only and is not modified by this package. This package still requires deployment/testing against your Render and Netlify services before production use.
