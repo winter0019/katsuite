@@ -56,3 +56,13 @@ Separate state-level application for Central Registry and Secretariat file track
 - Updated frontend styling to align more closely with KATZIMS' deep-green/mint visual language.
 
 The uploaded KATZIMS project is a reference only and is not modified by this package. This package still requires deployment/testing against your Render and Netlify services before production use.
+
+
+## Role-based file access update
+- Only Central Registry (or a Registry Officer explicitly assigned to the Central Registry branch) can register and dispatch new files.
+- State Coordinator Admin has state-wide search/view and reporting access, but cannot register or dispatch files.
+- Branch Heads and Registry Officers are scoped to files originating from, held by, or routed to their assigned office. They can acknowledge deliveries addressed to that office and record returns only while the file is held there.
+- Zonal Inspectors can view files associated with their zone and its LGAs; LGIs can view files submitted by or routed to their assigned LGA.
+- File list, detail, dashboard and movement-report API endpoints enforce office scope server-side. Frontend visibility is only a usability layer; backend permissions remain authoritative.
+
+Test with dummy accounts and files before deployment. Ensure each Branch Head, Zonal Inspector, and LGI account has the correct branch assigned.
