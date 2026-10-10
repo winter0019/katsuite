@@ -206,7 +206,7 @@ $('#loginForm').addEventListener('submit', async e => {
     } catch (err) { $('#loginError').textContent = err.message; }
 });
 
-$('#logoutBtn').onclick = () => { token = ''; currentUser = null; sessionStorage.removeItem('ops_token'); showLogin(); }; $$('.nav-link').forEach(b => b.addEventListener('click', () => goto(b.dataset.page)));$$('[data-goto]').forEach(b => b.addEventListener('click', () => goto(b.dataset.goto)));$('#refreshDashboard').onclick = loadDashboard;
+$('#logoutBtn').onclick = () => { token = ''; currentUser = null; sessionStorage.removeItem('ops_token'); showLogin(); };  $$('.nav-link').forEach(b => b.addEventListener('click', () => goto(b.dataset.page)));$$('[data-goto]').forEach(b => b.addEventListener('click', () => goto(b.dataset.goto)));$('#refreshDashboard').onclick = loadDashboard;
 $('#searchFiles').onclick = loadFiles;
 $('#fileSearch').addEventListener('keydown', e => { if (e.key === 'Enter') loadFiles(); });
 $('#filesRows').addEventListener('click', e => { const b = e.target.closest('[data-file]'); if (b) openFile(b.dataset.file); });
