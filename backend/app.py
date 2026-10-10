@@ -281,7 +281,7 @@ def file_create():
         try:
             row=conn.execute('''INSERT INTO files(id,reference_no,title,subject,state_code,originating_office,current_location,current_holder,registered_by,due_at,notes)
                 VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *''', (seq,ref,d['title'].strip(),d.get('subject','').strip(),d.get('state_code','').strip().upper(),d['originating_office'].strip(),d.get('current_location','Central Registry').strip(),g.user['full_name'],g.user['id'],d.get('due_at') or None,d.get('notes','').strip())).fetchone()
-            conn.execute("INSERT INTO movements(file_id,action,from_location,to_location,sender,recipient,acknowledged_at,created_by,remarks) VALUES(%s,'REGISTERED','','%s','%s','%s',now(),%s,'Initial file registration')", (seq,row['current_location'],d['originating_office'],g.user['full_name'],g.user['id']))
+            conn.execute("INSERT INTO movements(file_id,action,from_location,to_location,sender,recipient,acknowledged_at,created_by,remarks) VALUES(%s,'REGISTERED','',%s,%s,%s,now(),%s,'Initial file registration')", (seq,row['current_location'],d['originating_office'],g.user['full_name'],g.user['id']))
             # If a destination is selected during registration, create a tracked dispatch from Central Registry.
             destination=(d.get('destination_office') or '').strip()
             if destination:
