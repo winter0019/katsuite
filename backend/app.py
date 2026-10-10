@@ -133,6 +133,36 @@ def require_roles(*roles):
     return decorator
 
 
+def office_scope_sql(user, alias='f'):
+    """Return a parameterized visibility predicate for the logged-in office."""
+    role = user['role']
+    office = (user.get('branch_name') or '').strip()
+    if role in ('State Coordinator Admin', 'Central Registry'):
+        return 'TRUE', []
+    if role in ('Branch Head', 'Registry Officer'):
+        if not office:
+            return 'FALSE', []
+        return (f"({alias}.current_location=%s OR {alias}.originating_office=%s OR EXISTS (SELECT 1 FROM movements sm WHERE sm.file_id={alias}.id AND sm.to_location=%s))", [office, office, office])
+    if role == 'Local Government Inspector':
+        if not office:
+            return 'FALSE', []
+        return (f"({alias}.originating_office=%s OR {alias}.current_location=%s OR EXISTS (SELECT 1 FROM movements sm WHERE sm.file_id={alias}.id AND sm.to_location=%s))", [office, office, office])
+    if role == 'Zonal Inspector':
+        if not office:
+            return 'FALSE', []
+        # Zone officers can view files originating from, currently held by, or routed to their zone/LGAs.
+        return (f"({alias}.current_location=%s OR {alias}.originating_office IN (SELECT name FROM branches WHERE branch_type='LGA Office' AND location=%s) OR EXISTS (SELECT 1 FROM movements sm WHERE sm.file_id={alias}.id AND (sm.to_location=%s OR sm.to_location IN (SELECT name FROM branches WHERE branch_type='LGA Office' AND location=%s))))", [office, office, office, office])
+    return 'FALSE', []
+
+
+def user_can_access_file(conn, user, file_id):
+    clause, params = office_scope_sql(user)
+    return bool(conn.execute(f'SELECT 1 FROM files f WHERE f.id=%s AND {clause}', [file_id, *params]).fetchone())
+
+
+def is_central_registry(user):
+    return user['role'] == 'Central Registry' or (user['role'] == 'Registry Officer' and user.get('branch_name') == 'Central Registry')
+
 def bad(message, code=400): return jsonify(error=message), code
 
 def get_json(): return request.get_json(silent=True) or {}
@@ -240,8 +270,9 @@ def user_update(user_id):
     audit('update','user',user_id,f'active={active}'); return jsonify(message='Account updated.')
 
 @app.post('/api/files')
-@require_roles(*REGISTRY_ROLES)
+@require_roles('Central Registry', 'Registry Officer')
 def file_create():
+    if not is_central_registry(g.user): return bad('Only Central Registry staff may register a new file.', 403)
     d=get_json()
     if not d.get('title') or not d.get('originating_office'): return bad('File title and originating office are required.')
     with db() as conn:
@@ -267,8 +298,9 @@ def file_create():
 def files_list():
     q=(request.args.get('q') or '').strip(); loc=(request.args.get('location') or '').strip(); status=(request.args.get('status') or '').strip()
     start=(request.args.get('start') or '').strip(); end=(request.args.get('end') or '').strip()
-    sql='''SELECT f.*, CASE WHEN f.status='In Circulation' AND f.due_at IS NOT NULL AND f.due_at < now() THEN 'Overdue' ELSE f.status END AS computed_status FROM files f WHERE f.archived=FALSE'''
-    args=[]
+    scope, scope_args = office_scope_sql(g.user, 'f')
+    sql='''SELECT f.*, CASE WHEN f.status='In Circulation' AND f.due_at IS NOT NULL AND f.due_at < now() THEN 'Overdue' ELSE f.status END AS computed_status FROM files f WHERE f.archived=FALSE AND ''' + scope
+    args=list(scope_args)
     if q:
         sql += " AND (f.reference_no ILIKE %s OR f.title ILIKE %s OR f.subject ILIKE %s OR f.state_code ILIKE %s OR f.current_holder ILIKE %s)"
         args += [f'%{q}%']*5
@@ -285,13 +317,14 @@ def files_list():
 def file_detail(file_id):
     with db() as conn:
         f=conn.execute("SELECT f.*, CASE WHEN f.status='In Circulation' AND f.due_at IS NOT NULL AND f.due_at < now() THEN 'Overdue' ELSE f.status END AS computed_status FROM files f WHERE f.id=%s",(file_id,)).fetchone()
-        if not f: return bad('File not found.',404)
+        if not f or not user_can_access_file(conn, g.user, file_id): return bad('File not found or you do not have access to this file.',404)
         moves=conn.execute('SELECT * FROM movements WHERE file_id=%s ORDER BY dispatched_at DESC,id DESC',(file_id,)).fetchall()
     return jsonify(file=f,movements=moves)
 
 @app.post('/api/files/<int:file_id>/dispatch')
-@require_roles(*REGISTRY_ROLES)
+@require_roles('Central Registry', 'Registry Officer')
 def dispatch_file(file_id):
+    if not is_central_registry(g.user): return bad('Only Central Registry staff may dispatch files.',403)
     d=get_json()
     if not d.get('to_location') or not d.get('recipient'): return bad('Destination and receiving officer are required.')
     with db() as conn:
@@ -305,24 +338,32 @@ def dispatch_file(file_id):
     audit('dispatch','file',file_id,f"to={d['to_location']}; recipient={d['recipient']}"); return jsonify(message='File dispatch recorded. Awaiting receipt acknowledgement.',movement_id=m['id']),201
 
 @app.post('/api/movements/<int:movement_id>/acknowledge')
-@require_roles(*REGISTRY_ROLES,'Branch Head')
+@require_roles('Central Registry', 'Registry Officer', 'Branch Head')
 def acknowledge_movement(movement_id):
     d=get_json()
     with db() as conn:
         m=conn.execute('SELECT * FROM movements WHERE id=%s',(movement_id,)).fetchone()
         if not m: return bad('Movement not found.',404)
+        if g.user['role'] in ('Registry Officer', 'Branch Head') and m['to_location'] != g.user.get('branch_name'):
+            return bad('You may acknowledge only deliveries addressed to your assigned office.',403)
+        if g.user['role'] == 'Central Registry' and m['to_location'] != 'Central Registry':
+            return bad('Central Registry may acknowledge only deliveries addressed to Central Registry.',403)
         if m['acknowledged_at']: return bad('This delivery has already been acknowledged.',409)
         conn.execute('UPDATE movements SET acknowledged_at=now(),remarks=CASE WHEN %s<>\'\' THEN remarks || E\'\\n\' || %s ELSE remarks END WHERE id=%s',(d.get('remarks',''),d.get('remarks',''),movement_id))
         conn.execute("UPDATE files SET status='In Circulation',current_location=%s,current_holder=%s WHERE id=%s",(m['to_location'],m['recipient'],m['file_id']))
     audit('acknowledge','movement',movement_id,'Receipt acknowledged'); return jsonify(message='Receipt acknowledged.')
 
 @app.post('/api/files/<int:file_id>/return')
-@require_roles(*REGISTRY_ROLES,'Branch Head')
+@require_roles('Central Registry', 'Registry Officer', 'Branch Head')
 def return_file(file_id):
     d=get_json()
     with db() as conn:
         f=conn.execute('SELECT * FROM files WHERE id=%s AND archived=FALSE FOR UPDATE',(file_id,)).fetchone()
         if not f: return bad('File not found.',404)
+        if g.user['role'] in ('Registry Officer', 'Branch Head') and f['current_location'] != g.user.get('branch_name'):
+            return bad('You may act only on files currently held by your assigned office.',403)
+        if g.user['role'] == 'Central Registry' and f['current_location'] != 'Central Registry':
+            return bad('Central Registry may record a return only when the file is physically at Central Registry.',403)
         m=conn.execute("SELECT * FROM movements WHERE file_id=%s AND action='DISPATCHED' AND returned_at IS NULL ORDER BY id DESC LIMIT 1",(file_id,)).fetchone()
         if not m: return bad('No outstanding dispatch was found for this file.',409)
         location=(d.get('return_location') or 'Central Registry').strip()
@@ -334,29 +375,30 @@ def return_file(file_id):
 @app.get('/api/dashboard')
 @require_roles(*ALL_READ_ROLES)
 def dashboard():
-    start=request.args.get('start'); end=request.args.get('end')
+    scope, scope_args = office_scope_sql(g.user, 'f')
     with db() as conn:
-        counts=conn.execute('''SELECT
-          count(*) FILTER (WHERE archived=FALSE) AS total_files,
-          count(*) FILTER (WHERE archived=FALSE AND registered_at::date=current_date) AS registered_today,
-          count(*) FILTER (WHERE archived=FALSE AND status='Returned' AND id IN (SELECT file_id FROM movements WHERE action='RETURNED' AND returned_at::date=current_date)) AS returned_today,
-          count(*) FILTER (WHERE archived=FALSE AND status='In Circulation') AS circulating,
-          count(*) FILTER (WHERE archived=FALSE AND status='In Transit') AS in_transit,
-          count(*) FILTER (WHERE archived=FALSE AND status='In Circulation' AND due_at < now()) AS overdue
-          FROM files''').fetchone()
-        unack=conn.execute("SELECT count(*) AS n FROM movements WHERE action='DISPATCHED' AND acknowledged_at IS NULL AND returned_at IS NULL").fetchone()['n']
-        byloc=conn.execute('SELECT current_location AS location,count(*) AS count FROM files WHERE archived=FALSE GROUP BY current_location ORDER BY count DESC,current_location').fetchall()
-        daily=conn.execute('''SELECT registered_at::date AS day,count(*) AS count FROM files WHERE registered_at >= current_date-6 GROUP BY registered_at::date ORDER BY day''').fetchall()
-        recent=conn.execute('''SELECT f.id,f.reference_no,f.title,f.state_code,f.current_location,f.current_holder,f.status,f.registered_at,f.due_at,
+        counts=conn.execute("""SELECT
+          count(*) AS total_files,
+          count(*) FILTER (WHERE f.registered_at::date=current_date) AS registered_today,
+          count(*) FILTER (WHERE f.status='Returned' AND f.id IN (SELECT file_id FROM movements WHERE action='RETURNED' AND returned_at::date=current_date)) AS returned_today,
+          count(*) FILTER (WHERE f.status='In Circulation') AS circulating,
+          count(*) FILTER (WHERE f.status='In Transit') AS in_transit,
+          count(*) FILTER (WHERE f.status='In Circulation' AND f.due_at < now()) AS overdue
+          FROM files f WHERE f.archived=FALSE AND """+scope, scope_args).fetchone()
+        unack=conn.execute("SELECT count(*) AS n FROM movements m JOIN files f ON f.id=m.file_id WHERE m.action='DISPATCHED' AND m.acknowledged_at IS NULL AND m.returned_at IS NULL AND "+scope,scope_args).fetchone()['n']
+        byloc=conn.execute('SELECT f.current_location AS location,count(*) AS count FROM files f WHERE f.archived=FALSE AND '+scope+' GROUP BY f.current_location ORDER BY count DESC,f.current_location',scope_args).fetchall()
+        daily=conn.execute('SELECT f.registered_at::date AS day,count(*) AS count FROM files f WHERE f.archived=FALSE AND f.registered_at >= current_date-6 AND '+scope+' GROUP BY f.registered_at::date ORDER BY f.registered_at::date',scope_args).fetchall()
+        recent=conn.execute("""SELECT f.id,f.reference_no,f.title,f.state_code,f.current_location,f.current_holder,f.status,f.registered_at,f.due_at,
            CASE WHEN f.status='In Circulation' AND f.due_at < now() THEN 'Overdue' ELSE f.status END AS computed_status
-           FROM files f WHERE f.archived=FALSE ORDER BY f.registered_at DESC LIMIT 8''').fetchall()
+           FROM files f WHERE f.archived=FALSE AND """+scope+' ORDER BY f.registered_at DESC LIMIT 8',scope_args).fetchall()
     return jsonify(counts={**counts,'unacknowledged':unack},by_location=byloc,daily=daily,recent=recent,generated_at=datetime.now(timezone.utc).isoformat())
 
 @app.get('/api/reports/movements')
 @require_roles(*ALL_READ_ROLES)
 def report_movements():
     start=request.args.get('start'); end=request.args.get('end')
-    sql='''SELECT m.id,m.action,m.from_location,m.to_location,m.sender,m.recipient,m.dispatched_at,m.acknowledged_at,m.due_at,m.returned_at,m.remarks,f.reference_no,f.title,f.state_code FROM movements m JOIN files f ON f.id=m.file_id WHERE 1=1'''; args=[]
+    scope, scope_args = office_scope_sql(g.user, 'f')
+    sql='''SELECT m.id,m.action,m.from_location,m.to_location,m.sender,m.recipient,m.dispatched_at,m.acknowledged_at,m.due_at,m.returned_at,m.remarks,f.reference_no,f.title,f.state_code FROM movements m JOIN files f ON f.id=m.file_id WHERE '''+scope; args=list(scope_args)
     if start: sql+=' AND m.dispatched_at >= %s::date'; args.append(start)
     if end: sql+=" AND m.dispatched_at < (%s::date + interval '1 day')"; args.append(end)
     sql+=' ORDER BY m.dispatched_at DESC LIMIT 2000'
