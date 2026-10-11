@@ -8,8 +8,12 @@ from psycopg.rows import dict_row
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', '')
-FRONTEND_ORIGIN = os.environ.get('FRONTEND_ORIGIN', '*')
-CORS(app, resources={r"/api/*": {"origins": [x.strip() for x in FRONTEND_ORIGIN.split(',') if x.strip()] or ['*']}})
+FRONTEND_ORIGIN = os.environ.get('FRONTEND_ORIGIN', 'https://katsuite.netlify.app')
+ALLOWED_ORIGINS = list(dict.fromkeys(
+    [x.strip() for x in FRONTEND_ORIGIN.split(',') if x.strip()] +
+    ['https://katsuite.netlify.app', 'http://localhost:3000', 'http://127.0.0.1:5500']
+))
+CORS(app, resources={r"/api/*": {"origins": ALLOWED_ORIGINS, "methods": ["GET", "POST", "PATCH", "DELETE", "OPTIONS"], "allow_headers": ["Authorization", "Content-Type"], "supports_credentials": False}}, automatic_options=True)
 
 ROLES = {'State Coordinator Admin', 'Central Registry', 'Branch Head', 'Registry Officer', 'Zonal Inspector', 'Local Government Inspector', 'Read-only Auditor'}
 ADMIN_ROLES = {'State Coordinator Admin'}
@@ -66,6 +70,15 @@ def init_db():
             id BIGSERIAL PRIMARY KEY, user_id BIGINT REFERENCES users(id), action TEXT NOT NULL,
             entity_type TEXT NOT NULL, entity_id TEXT NOT NULL DEFAULT '', details TEXT NOT NULL DEFAULT '',
             created_at TIMESTAMPTZ NOT NULL DEFAULT now())''')
+        conn.execute('''CREATE TABLE IF NOT EXISTS password_reset_requests (
+            id BIGSERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            status TEXT NOT NULL DEFAULT 'Pending',
+            requested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            resolved_at TIMESTAMPTZ,
+            resolved_by BIGINT REFERENCES users(id),
+            UNIQUE(user_id, status)
+        )''')
         # Default branches are inserted only when absent.
         for name, kind, loc in [
             ('State Coordinator Office','State Office','Katsina State Secretariat'),
@@ -269,6 +282,64 @@ def user_update(user_id):
         conn.execute('UPDATE users SET active=%s WHERE id=%s',(active,user_id))
     audit('update','user',user_id,f'active={active}'); return jsonify(message='Account updated.')
 
+@app.get('/api/password-reset-requests')
+@require_roles(*ADMIN_ROLES)
+def password_reset_requests_list():
+    with db() as conn:
+        rows = conn.execute('''SELECT r.id,r.user_id,u.full_name,u.username,r.status,r.requested_at
+            FROM password_reset_requests r JOIN users u ON u.id=r.user_id
+            WHERE r.status='Pending' ORDER BY r.requested_at ASC''').fetchall()
+    return jsonify(requests=rows)
+
+
+@app.post('/api/auth/forgot-password')
+def forgot_password_request():
+    d = get_json()
+    username = (d.get('username') or '').strip()
+    if not username:
+        return bad('Enter your username to request a password reset.')
+    with db() as conn:
+        user = conn.execute('SELECT id,active FROM users WHERE lower(username)=lower(%s)', (username,)).fetchone()
+        # Do not reveal whether a username exists.
+        if user and user['active']:
+            conn.execute("INSERT INTO password_reset_requests(user_id,status) VALUES(%s,'Pending') ON CONFLICT(user_id,status) DO NOTHING", (user['id'],))
+    return jsonify(message='If the account exists, a password-reset request has been sent to the administrator.')
+
+
+@app.post('/api/users/<int:user_id>/reset-password')
+@require_roles(*ADMIN_ROLES)
+def user_reset_password(user_id):
+    d = get_json()
+    temporary = str(d.get('temporary_password') or '')
+    if len(temporary) < 8:
+        return bad('Use a temporary password of at least 8 characters.')
+    with db() as conn:
+        target = conn.execute('SELECT id,username FROM users WHERE id=%s', (user_id,)).fetchone()
+        if not target:
+            return bad('User not found.',404)
+        conn.execute('UPDATE users SET password_hash=%s WHERE id=%s', (pw_hash(temporary),user_id))
+        conn.execute("UPDATE password_reset_requests SET status='Resolved',resolved_at=now(),resolved_by=%s WHERE user_id=%s AND status='Pending'", (g.user['id'],user_id))
+    audit('reset_password','user',user_id,'Temporary password issued; user should change it after signing in')
+    return jsonify(message='Temporary password set. Share it securely; the user should change it after signing in.')
+
+
+@app.post('/api/auth/change-password')
+@require_roles(*ALL_READ_ROLES)
+def auth_change_password():
+    d = get_json()
+    current = str(d.get('current_password') or '')
+    new = str(d.get('new_password') or '')
+    if len(new) < 8:
+        return bad('Use a new password of at least 8 characters.')
+    with db() as conn:
+        row = conn.execute('SELECT password_hash FROM users WHERE id=%s', (g.user['id'],)).fetchone()
+        if not row or not pw_ok(current,row['password_hash']):
+            return bad('Current password is incorrect.',403)
+        conn.execute('UPDATE users SET password_hash=%s WHERE id=%s',(pw_hash(new),g.user['id']))
+    audit('change_password','user',g.user['id'],'Password changed by user')
+    return jsonify(message='Password changed successfully.')
+
+
 @app.post('/api/files')
 @require_roles('Central Registry', 'Registry Officer')
 def file_create():
@@ -321,66 +392,24 @@ def file_detail(file_id):
         moves=conn.execute('SELECT * FROM movements WHERE file_id=%s ORDER BY dispatched_at DESC,id DESC',(file_id,)).fetchall()
     return jsonify(file=f,movements=moves)
 
-def next_file_destinations(conn, user):
-    role = user['role']
-    office = (user.get('branch_name') or '').strip()
-    if role in ('Central Registry', 'Registry Officer'):
-        if not is_central_registry(user):
-            return []
-        # Direct collection is allowed for LGIs, ZIs, branches/units and State Coordinator.
-        return [r['name'] for r in conn.execute(
-            "SELECT name FROM branches WHERE active=TRUE AND name <> 'Central Registry' ORDER BY name"
-        ).fetchall()]
-    if role == 'Local Government Inspector':
-        zone = conn.execute("SELECT location FROM branches WHERE name=%s AND branch_type='LGA Office'", (office,)).fetchone()
-        if not zone:
-            return []
-        return [r['name'] for r in conn.execute(
-            "SELECT name FROM branches WHERE branch_type='Zonal Office' AND name=%s", (zone['location'],)
-        ).fetchall()]
-    if role == 'Zonal Inspector':
-        return [r['name'] for r in conn.execute(
-            "SELECT name FROM branches WHERE branch_type='Secretariat Branch' AND active=TRUE ORDER BY name"
-        ).fetchall()]
-    if role == 'Branch Head':
-        return ['State Coordinator Office']
-    return []
-
-
 @app.post('/api/files/<int:file_id>/dispatch')
-@require_roles('Central Registry', 'Registry Officer', 'Local Government Inspector', 'Zonal Inspector', 'Branch Head')
+@require_roles('Central Registry', 'Registry Officer')
 def dispatch_file(file_id):
-    d = get_json()
-    destination = (d.get('to_location') or '').strip()
-    recipient = (d.get('recipient') or '').strip()
-    if not destination or not recipient:
-        return bad('Destination and receiving officer are required.')
+    if not is_central_registry(g.user): return bad('Only Central Registry staff may dispatch files.',403)
+    d=get_json()
+    if not d.get('to_location') or not d.get('recipient'): return bad('Destination and receiving officer are required.')
     with db() as conn:
-        f = conn.execute('SELECT * FROM files WHERE id=%s AND archived=FALSE FOR UPDATE', (file_id,)).fetchone()
-        if not f:
-            return bad('File not found.', 404)
-        role = g.user['role']
-        current_location = (f['current_location'] or '').strip()
-        if role in ('Central Registry', 'Registry Officer') and not is_central_registry(g.user):
-            return bad('Only Central Registry staff may dispatch files from Central Registry.', 403)
-        if current_location.casefold() != (g.user.get('branch_name') or '').strip().casefold():
-            return bad('Your office does not currently hold this file.', 403)
-        if f['status'] == 'In Transit' or f['status'] == 'Archived':
-            return bad('This file is in transit or archived and cannot be forwarded.', 409)
-        allowed = next_file_destinations(conn, g.user)
-        if destination.casefold() not in {x.casefold() for x in allowed}:
-            return bad('This destination is not permitted in the file movement workflow.', 403)
-        due = d.get('due_at') or None
-        m = conn.execute('''INSERT INTO movements(file_id,action,from_location,to_location,sender,recipient,due_at,remarks,created_by)
-          VALUES(%s,'DISPATCHED',%s,%s,%s,%s,%s,%s,%s) RETURNING id''',
-          (file_id, current_location, destination, g.user['full_name'], recipient, due, d.get('remarks',''), g.user['id'])).fetchone()
-        conn.execute("UPDATE files SET current_location=%s,current_holder=%s,status='In Transit',due_at=%s WHERE id=%s",
-                     (destination, recipient, due, file_id))
-    audit('dispatch','file',file_id,f"from={current_location}; to={destination}; recipient={recipient}")
-    return jsonify(message='File dispatch recorded. Awaiting physical receipt acknowledgement.', movement_id=m['id']), 201
+        f=conn.execute('SELECT * FROM files WHERE id=%s AND archived=FALSE FOR UPDATE',(file_id,)).fetchone()
+        if not f: return bad('File not found.',404)
+        if f['status']=='In Circulation': return bad('This file is already in circulation. Receive or return it before dispatching again.',409)
+        due=d.get('due_at') or None
+        m=conn.execute('''INSERT INTO movements(file_id,action,from_location,to_location,sender,recipient,due_at,remarks,created_by)
+          VALUES(%s,'DISPATCHED',%s,%s,%s,%s,%s,%s,%s) RETURNING id''',(file_id,f['current_location'],d['to_location'].strip(),g.user['full_name'],d['recipient'].strip(),due,d.get('remarks',''),g.user['id'])).fetchone()
+        conn.execute("UPDATE files SET current_location=%s,current_holder=%s,status='In Transit',due_at=%s WHERE id=%s",(d['to_location'].strip(),d['recipient'].strip(),due,file_id))
+    audit('dispatch','file',file_id,f"to={d['to_location']}; recipient={d['recipient']}"); return jsonify(message='File dispatch recorded. Awaiting receipt acknowledgement.',movement_id=m['id']),201
 
 @app.post('/api/movements/<int:movement_id>/acknowledge')
-@require_roles('Central Registry', 'Registry Officer', 'Branch Head', 'Zonal Inspector', 'Local Government Inspector', 'State Coordinator Admin')
+@require_roles('Central Registry', 'Registry Officer', 'Branch Head', 'Zonal Inspector', 'State Coordinator Admin')
 def acknowledge_movement(movement_id):
     d=get_json()
     with db() as conn:
@@ -389,14 +418,10 @@ def acknowledge_movement(movement_id):
         role = g.user['role']
         assigned_office = (g.user.get('branch_name') or '').strip()
         destination = (m['to_location'] or '').strip()
-        if role in ('Central Registry', 'Registry Officer'):
-            if not is_central_registry(g.user) or destination.casefold() != 'central registry':
-                return bad('Only Central Registry staff may acknowledge deliveries addressed to Central Registry.', 403)
-        elif role == 'State Coordinator Admin':
-            if destination.casefold() != 'state coordinator office':
-                return bad('The delivery is not addressed to the State Coordinator Office.', 403)
-        elif not assigned_office or destination.casefold() != assigned_office.casefold():
-            return bad('You may acknowledge only deliveries addressed to your assigned office.', 403)
+        if role in ('Central Registry', 'Registry Officer') and role == 'Central Registry' and destination != 'Central Registry':
+            return bad('Central Registry may acknowledge only deliveries addressed to Central Registry.',403)
+        if role in ('Registry Officer', 'Branch Head', 'Zonal Inspector', 'State Coordinator Admin') and destination != assigned_office:
+            return bad('You may acknowledge only deliveries addressed to your assigned office.',403)
         if m['acknowledged_at']: return bad('This delivery has already been acknowledged.',409)
         conn.execute('UPDATE movements SET acknowledged_at=now(),remarks=CASE WHEN %s<>\'\' THEN remarks || E\'\\n\' || %s ELSE remarks END WHERE id=%s',(d.get('remarks',''),d.get('remarks',''),movement_id))
         conn.execute("UPDATE files SET status='In Circulation',current_location=%s,current_holder=%s WHERE id=%s",(m['to_location'],m['recipient'],m['file_id']))
