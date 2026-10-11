@@ -79,6 +79,27 @@ def init_db():
             resolved_by BIGINT REFERENCES users(id),
             UNIQUE(user_id, status)
         )''')
+        # Upgrade older password_reset_requests tables in place. CREATE TABLE IF NOT
+        # EXISTS does not add columns to a table that already exists.
+        conn.execute('ALTER TABLE password_reset_requests ADD COLUMN IF NOT EXISTS user_id BIGINT REFERENCES users(id) ON DELETE CASCADE')
+        conn.execute("ALTER TABLE password_reset_requests ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'Pending'")
+        conn.execute('ALTER TABLE password_reset_requests ADD COLUMN IF NOT EXISTS requested_at TIMESTAMPTZ NOT NULL DEFAULT now()')
+        conn.execute('ALTER TABLE password_reset_requests ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ')
+        conn.execute('ALTER TABLE password_reset_requests ADD COLUMN IF NOT EXISTS resolved_by BIGINT REFERENCES users(id)')
+        # Backfill user_id from legacy username column if that was the old schema.
+        conn.execute("""
+            DO $$
+            BEGIN
+              IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema=current_schema()
+                  AND table_name='password_reset_requests'
+                  AND column_name='username'
+              ) THEN
+                EXECUTE 'UPDATE password_reset_requests r SET user_id=u.id FROM users u WHERE r.user_id IS NULL AND lower(r.username)=lower(u.username)';
+              END IF;
+            END $$;
+        """)
         # Default branches are inserted only when absent.
         for name, kind, loc in [
             ('State Coordinator Office','State Office','Katsina State Secretariat'),
