@@ -494,3 +494,91 @@ tbody tr:hover { background: #fafcfb; }
   .profile { gap: 6px; }
   .profile .ghost { padding: 6px; }
 }
+
+
+/* KATZIMS reference-inspired login and dashboard refresh */
+:root{--green:#064735;--green2:#129765;--accent:#149866;--lime:#e4eaa8;--ink:#1a2d35;--muted:#71847d;--bg:#f2f7f4;--line:#e0ebe5;--shadow:0 12px 34px rgba(10,55,42,.07)}
+.login-wrap{position:relative;isolation:isolate;min-height:100vh;padding:28px 18px;background:linear-gradient(120deg,#dcefe9 0%,#f6fbf8 45%,#e1f0e8 100%);overflow:hidden}
+.login-backdrop{position:absolute;inset:0;z-index:-1;overflow:hidden;background:linear-gradient(90deg,rgba(231,247,241,.83),rgba(255,255,255,.62),rgba(231,247,241,.83))}
+.backdrop-building{position:absolute;inset:0;opacity:.18;background:linear-gradient(90deg,transparent 0 8%,#b7d2c5 8% 9%,transparent 9% 17%,#bfd9cd 17% 18%,transparent 18% 78%,#b9d3c7 78% 80%,transparent 80%),linear-gradient(0deg,#c6ded3 0 9%,transparent 9% 78%,#c1d9ce 78% 79%,transparent 79%);filter:blur(2px)}
+.backdrop-wave{position:absolute;left:-5%;width:110%;height:210px;border-radius:50% 50% 0 0;transform:rotate(-3deg)}
+.wave-one{bottom:-115px;background:#b7d9cb;border-top:5px solid #e9efc8}
+.wave-two{bottom:-158px;background:#e9f6ef;border-top:3px solid #fff7cf}
+.corps-silhouettes{position:absolute;bottom:12%;left:0;right:0;display:flex;justify-content:space-around;align-items:end;opacity:.13;color:#5c9680;font-size:clamp(18px,3vw,42px);font-weight:900}
+.corps-silhouettes span{height:160px;width:75px;padding-top:75px;text-align:center;background:linear-gradient(#8dbba6 0 0) center 18px/50px 55px no-repeat,linear-gradient(#8dbba6 0 0) center 72px/78px 90px no-repeat;border-radius:28px 28px 0 0}
+.login-card{position:relative;width:min(100%,570px);padding:0;background:rgba(255,255,255,.97);border:1px solid rgba(255,255,255,.85);border-radius:28px;box-shadow:0 22px 70px rgba(12,62,46,.14);overflow:visible}
+.login-brand{position:relative;overflow:hidden;text-align:center;padding:24px 24px 17px;color:#fff;background:linear-gradient(125deg,#0c4e3b,#087e59);border-radius:27px 27px 0 0}
+.login-brand:before,.login-brand:after{content:"";position:absolute;border:1px solid rgba(224,231,145,.5);border-radius:50%;width:180px;height:180px;right:-74px;top:-95px}
+.login-brand:after{width:240px;height:240px;right:-105px;top:-125px;border-color:rgba(255,255,255,.09)}
+.nysc-emblem{width:47px;height:47px;margin:0 auto 5px;border-radius:50%;border:2px solid #e9c83e;color:#f8e25a;background:#f9fff9;display:grid;place-items:center;position:relative;box-shadow:0 0 0 3px rgba(255,255,255,.08)}
+.emblem-star{position:absolute;top:-12px;font-size:17px;color:#df263a}
+.emblem-shield{width:26px;height:30px;display:grid;place-items:center;border:2px solid #13805a;border-radius:8px 8px 11px 11px;color:#12845a;font-weight:900;font-size:18px}
+.login-brand h1{margin:0;font-size:30px;letter-spacing:-1.4px;font-weight:900;color:#fff}
+.login-brand h1 span{color:#f4d64d}
+.login-office{margin:2px 0 9px;font-size:12px;letter-spacing:1px;font-weight:800;color:#d8eee4}
+.brand-rule{height:1px;background:#ffffff3b;max-width:360px;margin:0 auto 10px}
+.login-subtitle{font-weight:750;line-height:1.35;font-size:14px;margin:0 0 4px}
+.brand-tagline{font-size:10px;font-weight:900;letter-spacing:.7px;color:#f6d84d;margin:0}
+.login-body{padding:24px 25px 14px}
+.login-body h2{font-size:24px;letter-spacing:-.7px;margin:0 0 4px;color:#174b3a}
+.login-intro{font-size:14px;color:#6d8079;margin:0 0 16px}
+.login-status{padding:12px 14px;border:1px solid #c9eddb;border-radius:9px;background:#eaf8f1;color:#147b51;margin-bottom:14px}
+.login-body form{display:grid;gap:13px;margin:0 0 12px}
+.login-body label{font-size:12px;font-weight:850;color:#29473d;gap:5px}
+.login-input-wrap{display:flex;align-items:center;gap:12px;border:1px solid #d1e2d9;border-radius:11px;background:#fbfdfc;padding:0 13px;min-height:53px;color:#73958a}
+.login-input-wrap:focus-within{border-color:#2c966d;box-shadow:0 0 0 3px #14986617}
+.login-input-wrap input{border:0!important;box-shadow:none!important;background:transparent;min-height:50px;padding:8px 0;font-size:15px}
+.password-toggle{border:0;background:transparent;color:#07543e;font-weight:850;padding:8px 0}
+.login-submit{min-height:54px;border-radius:11px;background:linear-gradient(100deg,#07533e,#087e59);font-size:16px;box-shadow:0 6px 14px #0647351c}
+.login-submit span{margin-right:8px}
+.login-authorized{border-top:1px solid #e1ebe6;padding-top:13px;margin:0;text-align:center;color:#71847d;font-size:13px}
+.login-authorized span{font-weight:900;margin-right:8px}
+.login-shortcuts{display:flex;justify-content:space-around;gap:0;margin:13px 0 -22px;padding:11px 8px;background:#fff;border:1px solid #edf3ef;border-radius:19px;box-shadow:0 12px 30px rgba(10,55,42,.09)}
+.login-shortcuts div{flex:1;display:grid;justify-items:center;gap:3px;color:#23473a;border-right:1px solid #e5eee9;font-size:10px}
+.login-shortcuts div:last-child{border:0}
+.login-shortcuts span{width:31px;height:31px;border-radius:50%;display:grid;place-items:center;background:#087b57;color:white;font-size:15px}
+.login-shortcuts b{font-size:10px}
+.error{font-size:12px}
+
+/* Horizontal branded app header and dashboard */
+.app-shell{display:flex;flex-direction:column;min-height:100vh;grid-template-columns:none}
+.app-brandbar{height:86px;flex:none;display:flex;align-items:center;justify-content:space-between;background:#034735;color:#fff;padding:0 32px;box-shadow:0 8px 20px rgba(5,54,41,.17);z-index:5}
+.brandbar-mark{display:flex;align-items:center;gap:13px}
+.brandbar-mark strong{display:block;font-size:16px;color:#fff}
+.brandbar-mark small{display:block;margin-top:5px;color:#b6d5c8;font-size:12px}
+.brandbar-mark i{height:46px;width:3px;background:#e4cb45;margin-left:6px}
+.nysc-emblem.mini{width:39px;height:39px;margin:0;flex:none}
+.nysc-emblem.mini .emblem-shield{width:23px;height:26px}
+.menu-toggle{width:44px;height:44px;border:1px solid #ffffff35;border-radius:11px;background:transparent;color:white;font-size:22px}
+.sidebar{position:absolute;z-index:10;top:86px;left:0;height:calc(100vh - 86px);min-height:0;width:250px;transform:translateX(-105%);transition:transform .2s ease;box-shadow:12px 18px 28px #052e2420}
+.app-shell.menu-open .sidebar{transform:translateX(0)}
+.side-brand{display:none}
+.sidebar nav{margin-top:4px}
+.main{width:100%;min-height:calc(100vh - 86px)}
+.topbar{min-height:70px;padding:17px 32px;background:transparent;border:0}
+.topbar .eyebrow{display:none}
+.topbar h2{font-size:14px;font-weight:600;letter-spacing:0;color:#273d44}
+.profile strong{font-size:13px}
+.profile span{font-size:12px}
+.content{width:100%;max-width:1600px;padding:18px 4% 42px;background:transparent}
+.welcome-row{align-items:flex-start;margin-bottom:28px}
+.welcome-row h3{font-size:36px;letter-spacing:-1.1px;margin:0 0 6px;color:#1b3037}
+.welcome-row p{font-size:16px;margin:0}
+.welcome-row>.primary{min-height:58px;padding:0 25px;border-radius:14px}
+.filterbar{background:#fff;border:1px solid #e8f0eb;border-radius:14px;padding:14px;margin-bottom:22px;box-shadow:var(--shadow)}
+.stat-grid{grid-template-columns:repeat(5,minmax(0,1fr));gap:18px;margin:22px 0 32px}
+.stat-card{border:1px solid #e8efeb;border-radius:19px;box-shadow:var(--shadow);padding:24px;background:#fff;min-height:136px}
+.stat-card .stat-icon{display:none}
+.stat-card span{font-size:13px;color:#64747a;font-weight:500}
+.stat-card strong{font-size:40px;letter-spacing:-1px;margin-top:23px}
+.stat-card small{display:none}
+.two-col{gap:20px}
+.panel,.form-panel{border:1px solid #e5eee9;border-radius:17px;box-shadow:var(--shadow);background:#fff}
+.panel{padding:20px}
+.panel h3{font-size:20px}
+.page-intro h3{font-size:29px}
+.primary,.secondary{border-radius:12px}
+input,select,textarea{border-radius:12px;min-height:46px}
+.nav-link{border-radius:10px}
+@media(max-width:900px){.stat-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.welcome-row h3{font-size:29px}.content{padding:20px}.topbar{padding:15px 20px}}
+@media(max-width:600px){.login-wrap{padding:20px 14px 42px}.login-card{width:100%;border-radius:22px}.login-brand{border-radius:21px 21px 0 0;padding:22px 14px 16px}.login-body{padding:20px 18px 14px}.login-shortcuts{margin-bottom:-25px}.app-brandbar{height:72px;padding:0 16px}.main{min-height:calc(100vh - 72px)}.sidebar{top:72px;height:calc(100vh - 72px)}.topbar{padding:14px 16px;align-items:flex-start}.profile{gap:7px}.profile .avatar{display:none}.content{padding:14px 14px 32px}.welcome-row{flex-direction:column}.welcome-row h3{font-size:26px}.welcome-row>.primary{width:100%}.stat-grid{gap:10px}.stat-card{padding:17px;min-height:105px}.stat-card strong{font-size:32px;margin-top:15px}.filterbar{flex-wrap:wrap}.filterbar label{min-width:calc(50% - 8px)}.two-col{grid-template-columns:1fr}}
