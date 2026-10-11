@@ -261,7 +261,7 @@ def user_create():
 @require_roles(*ALL_READ_ROLES)
 def change_password():
     d=get_json(); current=str(d.get('current_password','')); new=str(d.get('new_password',''))
-    if len(new)<12: return bad('New password must contain at least 8 characters.')
+    if len(new)<8: return bad('New password must contain at least 8 characters.')
     with db() as conn:
         row=conn.execute('SELECT password_hash FROM users WHERE id=%s',(g.user['id'],)).fetchone()
         if not row or not pw_ok(current,row['password_hash']): return bad('Current or temporary password is incorrect.',401)
@@ -291,7 +291,7 @@ def password_reset_requests():
 @require_roles(*ADMIN_ROLES)
 def admin_reset_password(user_id):
     d=get_json(); temp=str(d.get('temporary_password',''))
-    if len(temp)<12: return bad('Temporary password must contain at least 8 characters.')
+    if len(temp)<8: return bad('Temporary password must contain at least 8 characters.')
     with db() as conn:
         target=conn.execute('SELECT id,username FROM users WHERE id=%s',(user_id,)).fetchone()
         if not target: return bad('User not found.',404)
