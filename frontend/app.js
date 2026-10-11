@@ -28,10 +28,19 @@ $('#usersRows')?.addEventListener('click',async e=>{
   const roleOptions=['State Coordinator Admin','Central Registry','Branch Head','Registry Officer','Zonal Inspector','Local Government Inspector','Read-only Auditor'];
   const role=prompt('Role (enter exact value):\n'+roleOptions.join('\n'),b.dataset.role||''); if(role===null)return;
   if(!roleOptions.includes(role)){notify('Invalid role. Use one of the listed role names.',true);return;}
-  const branchOptions=(branches.branches||[]).map(x=>`${x.id}: ${x.name}`).join('\n');
-  const branchInput=prompt('Branch ID (enter a listed ID, or leave blank for no branch):\n'+branchOptions,b.dataset.branch||''); if(branchInput===null)return;
-  const branch_id=branchInput.trim()?Number(branchInput.trim()):null;
-  if(branch_id!==null&&!(branches.branches||[]).some(x=>Number(x.id)===branch_id)){notify('Invalid branch ID.',true);return;}
+  const branchRows=branches.branches||[];
+  const branchOptions=branchRows.map(x=>`${x.id}: ${x.name}`).join('\n');
+  const currentBranch=branchRows.find(x=>Number(x.id)===Number(b.dataset.branch));
+  const branchInput=prompt('Assigned branch/office — enter its ID or exact name, or leave blank for no branch:\n'+branchOptions,currentBranch?`${currentBranch.id}: ${currentBranch.name}`:''); if(branchInput===null)return;
+  const branchText=branchInput.trim();
+  let selectedBranch=null;
+  if(branchText){
+   const idMatch=branchText.match(/^(\d+)(?:\s*:\s*.*)?$/);
+   if(idMatch) selectedBranch=branchRows.find(x=>Number(x.id)===Number(idMatch[1]));
+   if(!selectedBranch) selectedBranch=branchRows.find(x=>String(x.name||'').trim().toLowerCase()===branchText.toLowerCase());
+   if(!selectedBranch){notify('Invalid branch. Enter an ID or exact branch/office name from the list.',true);return;}
+  }
+  const branch_id=selectedBranch?Number(selectedBranch.id):null;
   await api('/api/users/'+b.dataset.editUser,{method:'PATCH',body:JSON.stringify({full_name,username,role,branch_id})});
   notify('User details updated.'); loadUsers();
  }catch(err){notify(err.message,true)}
