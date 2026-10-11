@@ -294,14 +294,28 @@ def users_list():
 @app.patch('/api/users/<int:user_id>')
 @require_roles(*ADMIN_ROLES)
 def user_update(user_id):
-    d=get_json()
+    d = get_json()
+    allowed_roles = ROLES
     with db() as conn:
-        target=conn.execute('SELECT id,active FROM users WHERE id=%s',(user_id,)).fetchone()
-        if not target: return bad('User not found.',404)
-        active=bool(d.get('active',target['active']))
-        if user_id==g.user['id'] and not active: return bad('You cannot deactivate your own account.',400)
-        conn.execute('UPDATE users SET active=%s WHERE id=%s',(active,user_id))
-    audit('update','user',user_id,f'active={active}'); return jsonify(message='Account updated.')
+        target = conn.execute('SELECT id,full_name,username,role,branch_id,active FROM users WHERE id=%s', (user_id,)).fetchone()
+        if not target:
+            return bad('User not found.', 404)
+        full_name = str(d.get('full_name', target['full_name'])).strip()
+        username = str(d.get('username', target['username'])).strip().lower()
+        role = str(d.get('role', target['role'])).strip()
+        branch_id = d.get('branch_id', target['branch_id']) or None
+        active = bool(d.get('active', target['active']))
+        if not full_name or not username:
+            return bad('Full name and username are required.')
+        if role not in allowed_roles:
+            return bad('Invalid role.')
+        if user_id == g.user['id'] and not active:
+            return bad('You cannot deactivate your own account.')
+        conn.execute('UPDATE users SET full_name=%s,username=%s,role=%s,branch_id=%s,active=%s WHERE id=%s',
+                     (full_name, username, role, branch_id, active, user_id))
+        row = conn.execute('SELECT u.id,u.full_name,u.username,u.role,u.branch_id,u.active,u.created_at,b.name AS branch_name FROM users u LEFT JOIN branches b ON b.id=u.branch_id WHERE u.id=%s', (user_id,)).fetchone()
+    audit('update','user',user_id,f"username={row['username']}; role={row['role']}; branch_id={row['branch_id']}; active={row['active']}")
+    return jsonify(message='User details updated.', user=row)
 
 @app.get('/api/password-reset-requests')
 @require_roles(*ADMIN_ROLES)
