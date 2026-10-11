@@ -137,7 +137,11 @@ def office_scope_sql(user, alias='f'):
     """Return a parameterized visibility predicate for the logged-in office."""
     role = user['role']
     office = (user.get('branch_name') or '').strip()
-    if role in ('State Coordinator Admin', 'Central Registry'):
+    # State Coordinator sees only files physically submitted/forwarded to its office.
+    # Central Registry retains the full state-wide register.
+    if role == 'State Coordinator Admin':
+        return f"{alias}.current_location=%s", ['State Coordinator Office']
+    if role == 'Central Registry':
         return 'TRUE', []
     if role in ('Branch Head', 'Registry Officer'):
         if not office:
