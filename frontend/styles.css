@@ -589,3 +589,229 @@ input,select,textarea{border-radius:12px;min-height:46px}
 .nav-link{border-radius:10px}
 @media(max-width:900px){.stat-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.welcome-row h3{font-size:29px}.content{padding:20px}.topbar{padding:15px 20px}}
 @media(max-width:600px){.login-wrap{padding:20px 14px 42px}.login-card{width:100%;border-radius:22px}.login-brand{border-radius:21px 21px 0 0;padding:22px 14px 16px}.login-body{padding:20px 18px 14px}.login-shortcuts{margin-bottom:-25px}.app-brandbar{height:72px;padding:0 16px}.main{min-height:calc(100vh - 72px)}.sidebar{top:72px;height:calc(100vh - 72px)}.topbar{padding:14px 16px;align-items:flex-start}.profile{gap:7px}.profile .avatar{display:none}.content{padding:14px 14px 32px}.welcome-row{flex-direction:column}.welcome-row h3{font-size:26px}.welcome-row>.primary{width:100%}.stat-grid{gap:10px}.stat-card{padding:17px;min-height:105px}.stat-card strong{font-size:32px;margin-top:15px}.filterbar{flex-wrap:wrap}.filterbar label{min-width:calc(50% - 8px)}.two-col{grid-template-columns:1fr}}
+
+
+
+/* Responsive layout improvements: desktop, tablet and mobile */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  width: 100%;
+  min-width: 320px;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  width: 100%;
+  min-width: 320px;
+  margin: 0;
+  overflow-x: hidden;
+}
+
+img, svg, video, canvas {
+  max-width: 100%;
+  height: auto;
+}
+
+input, select, textarea, button {
+  max-width: 100%;
+  font: inherit;
+}
+
+input, select, textarea {
+  min-width: 0;
+}
+
+button, .btn, a {
+  touch-action: manipulation;
+}
+
+.app-shell, .app-layout, .main-content, main, .page, .content,
+.dashboard, .dashboard-content, .container, .form-panel {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.table-wrap, .table-responsive, .data-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+table {
+  max-width: 100%;
+}
+
+@media (max-width: 1024px) {
+  .app-shell, .app-layout {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .sidebar {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .main-content, main, .content {
+    width: 100%;
+    padding-left: clamp(12px, 2.5vw, 24px);
+    padding-right: clamp(12px, 2.5vw, 24px);
+  }
+
+  .dashboard-grid, .stats-grid, .cards-grid, .quick-actions-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .topbar, .app-header, .navbar, .header-inner {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+}
+
+@media (max-width: 640px) {
+  body {
+    font-size: 15px;
+  }
+
+  .login-wrap, .login-page, .login-layout {
+    min-height: 100svh;
+    padding: 16px;
+    background-position: center;
+  }
+
+  .login-card, .login-panel, .auth-card, .login-box {
+    width: 100%;
+    max-width: 440px;
+    margin: 0 auto;
+    padding: clamp(18px, 5vw, 28px);
+  }
+
+  .login-brand, .brand, .brand-header {
+    gap: 10px;
+  }
+
+  .login-brand img, .brand img, .brand-logo, .logo {
+    max-width: 64px;
+    max-height: 64px;
+    object-fit: contain;
+  }
+
+  .app-header, .topbar, .navbar, .header-inner {
+    align-items: flex-start;
+    padding: 12px 14px;
+  }
+
+  .header-brand, .brand-title, .app-title {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .header-brand h1, .brand-title h1, .app-title {
+    font-size: clamp(17px, 4.8vw, 22px);
+    line-height: 1.25;
+  }
+
+  .nav, .nav-links, .navigation, .navbar-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    width: 100%;
+  }
+
+  .nav a, .nav button, .nav-links a, .navigation a, .navbar-nav a {
+    min-height: 42px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 9px 11px;
+  }
+
+  .main-content, main, .content, .page, .dashboard-content {
+    padding: 14px !important;
+  }
+
+  .page-intro, .page-header, .section-header, .dashboard-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .dashboard-grid, .stats-grid, .cards-grid, .quick-actions-grid,
+  .form-grid, .two-column, .content-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .span-two {
+    grid-column: auto !important;
+  }
+
+  .stat-card, .metric-card, .dashboard-card, .card {
+    min-width: 0;
+    padding: 16px;
+  }
+
+  .form-panel {
+    padding: 14px;
+  }
+
+  label {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  input, select, textarea {
+    width: 100%;
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  textarea {
+    min-height: 90px;
+  }
+
+  button, .btn, .primary, .secondary {
+    min-height: 44px;
+  }
+
+  .form-actions, .button-row, .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .form-actions button, .button-row button {
+    flex: 1 1 140px;
+  }
+
+  .table-wrap table, .table-responsive table, .data-table-wrap table {
+    min-width: 620px;
+  }
+
+  .modal, .dialog, .modal-content {
+    width: calc(100% - 24px);
+    max-width: none;
+    max-height: calc(100svh - 24px);
+    overflow: auto;
+    margin: 12px;
+  }
+
+  .footer, .login-footer {
+    flex-wrap: wrap;
+    text-align: center;
+    gap: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
