@@ -1096,3 +1096,92 @@ table {
     height: 42px;
   }
 }
+
+
+/* Match the supplied login reference proportions */
+#loginScreen.login-wrap {
+  min-height: 100vh;
+  min-height: 100svh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 22px 16px;
+}
+
+#loginScreen .login-card {
+  width: 570px !important;
+  max-width: calc(100vw - 32px) !important;
+  margin: auto !important;
+}
+
+#loginScreen .login-brand {
+  padding: 18px 22px !important;
+}
+
+#loginScreen .nysc-emblem {
+  width: 52px !important;
+  height: 52px !important;
+  margin-bottom: 7px !important;
+}
+
+#loginScreen .login-brand h1 {
+  font-size: 29px !important;
+  line-height: 1.12 !important;
+  margin: 4px 0 !important;
+}
+
+#loginScreen .login-body {
+  padding: 24px 26px 14px !important;
+}
+
+#loginScreen .login-body h2 {
+  font-size: 26px !important;
+  margin: 0 0 5px !important;
+}
+
+#loginScreen .login-body p {
+  margin-top: 5px;
+  margin-bottom: 12px;
+}
+
+#loginScreen .login-body label {
+  margin-bottom: 5px;
+}
+
+#loginScreen .login-body input {
+  min-height: 46px !important;
+}
+
+#loginScreen .login-submit {
+  min-height: 48px !important;
+  margin-top: 2px;
+}
+
+#loginScreen .login-authorized {
+  margin-top: 12px !important;
+  padding-top: 10px !important;
+}
+
+#loginScreen .login-shortcuts {
+  margin-top: 12px !important;
+  padding: 10px 12px !important;
+}
+
+@media (max-width: 640px) {
+  #loginScreen.login-wrap {
+    padding: 12px;
+  }
+  #loginScreen .login-card {
+    width: min(100%, 420px) !important;
+    max-width: 420px !important;
+  }
+  #loginScreen .login-brand {
+    padding: 14px 15px !important;
+  }
+  #loginScreen .login-body {
+    padding: 18px 18px 12px !important;
+  }
+  #loginScreen .login-brand h1 {
+    font-size: clamp(21px, 6vw, 27px) !important;
+  }
+}
