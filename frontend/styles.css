@@ -44,7 +44,11 @@ button { cursor: pointer; }
   display: grid;
   place-items: center;
   padding: 24px;
-  background: radial-gradient(circle at 80% 15%, #dcead0 0, transparent 28%), linear-gradient(135deg, #f5f8f5, #eaf2ec);
+  background-image: linear-gradient(135deg, rgba(8, 46, 34, .68), rgba(10, 72, 49, .40)), url("assets/login-background.jpg");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-color: #eaf2ec;
 }
 
 .login-card {
@@ -511,6 +515,9 @@ tbody tr:hover { background: #fafcfb; }
 .login-brand:before,.login-brand:after{content:"";position:absolute;border:1px solid rgba(224,231,145,.5);border-radius:50%;width:180px;height:180px;right:-74px;top:-95px}
 .login-brand:after{width:240px;height:240px;right:-105px;top:-125px;border-color:rgba(255,255,255,.09)}
 .nysc-emblem{width:47px;height:47px;margin:0 auto 5px;border-radius:50%;border:2px solid #e9c83e;color:#f8e25a;background:#f9fff9;display:grid;place-items:center;position:relative;box-shadow:0 0 0 3px rgba(255,255,255,.08)}
+.nysc-emblem img{display:block;width:100%;height:100%;object-fit:contain;border-radius:50%;padding:3px;position:relative;z-index:2}
+.emblem-fallback{display:none;font-size:8px;font-weight:900;color:#13805a}
+.nysc-emblem.logo-fallback .emblem-fallback{display:block}
 .emblem-star{position:absolute;top:-12px;font-size:17px;color:#df263a}
 .emblem-shield{width:26px;height:30px;display:grid;place-items:center;border:2px solid #13805a;border-radius:8px 8px 11px 11px;color:#12845a;font-weight:900;font-size:18px}
 .login-brand h1{margin:0;font-size:30px;letter-spacing:-1.4px;font-weight:900;color:#fff}

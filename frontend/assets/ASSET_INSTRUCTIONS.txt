@@ -1,0 +1,4 @@
+Place the official NYSC logo image here as nysc-logo.png.
+Place the login background photo here as login-background.jpg.
+These filenames and paths are referenced by index.html and styles.css.
+If the logo is not present, the page displays a text fallback. If the background is not present, the CSS background color remains.
