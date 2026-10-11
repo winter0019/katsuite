@@ -44,7 +44,7 @@ def init_db():
         conn.execute('''CREATE TABLE IF NOT EXISTS users (
             id BIGSERIAL PRIMARY KEY, full_name TEXT NOT NULL, username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL, role TEXT NOT NULL, branch_id BIGINT,
-            active BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMPTZ NOT NULL DEFAULT now())''')
+            active BOOLEAN NOT NULL DEFAULT TRUE, must_change_password BOOLEAN NOT NULL DEFAULT FALSE, created_at TIMESTAMPTZ NOT NULL DEFAULT now())''')
         conn.execute('''CREATE TABLE IF NOT EXISTS branches (
             id BIGSERIAL PRIMARY KEY, name TEXT UNIQUE NOT NULL, branch_type TEXT NOT NULL DEFAULT 'Secretariat Branch',
             location TEXT NOT NULL DEFAULT '', active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -66,6 +66,8 @@ def init_db():
             id BIGSERIAL PRIMARY KEY, user_id BIGINT REFERENCES users(id), action TEXT NOT NULL,
             entity_type TEXT NOT NULL, entity_id TEXT NOT NULL DEFAULT '', details TEXT NOT NULL DEFAULT '',
             created_at TIMESTAMPTZ NOT NULL DEFAULT now())''')
+        conn.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE')
+        conn.execute('''CREATE TABLE IF NOT EXISTS password_reset_requests (id BIGSERIAL PRIMARY KEY, username TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'Pending', created_at TIMESTAMPTZ NOT NULL DEFAULT now(), resolved_at TIMESTAMPTZ)''')
         # Default branches are inserted only when absent.
         for name, kind, loc in [
             ('State Coordinator Office','State Office','Katsina State Secretariat'),
@@ -113,7 +115,7 @@ def decode_token(token):
         payload = json.loads(base64.urlsafe_b64decode(raw + '='*((4-len(raw)%4)%4)))
         if payload['exp'] < int(datetime.now(timezone.utc).timestamp()): return None
         with db() as conn:
-            return conn.execute('SELECT u.id,u.full_name,u.username,u.role,u.branch_id,u.active,b.name AS branch_name FROM users u LEFT JOIN branches b ON b.id=u.branch_id WHERE u.id=%s', (payload['uid'],)).fetchone()
+            return conn.execute('SELECT u.id,u.full_name,u.username,u.role,u.branch_id,u.active,u.must_change_password,b.name AS branch_name FROM users u LEFT JOIN branches b ON b.id=u.branch_id WHERE u.id=%s', (payload['uid'],)).fetchone()
     except Exception:
         return None
 
@@ -192,7 +194,7 @@ def setup_admin():
     setup_key = os.environ.get('SETUP_KEY','')
     if not setup_key or not hmac.compare_digest(str(data.get('setup_key','')), setup_key): return bad('Invalid setup key.', 403)
     if not all(data.get(k) for k in ('full_name','username','password')): return bad('full_name, username and password are required.')
-    if len(str(data['password'])) < 12: return bad('Use a password of at least 12 characters.')
+    if len(str(data['password'])) < 8: return bad('Use a password of at least 8 characters.')
     try:
         init_db()
         with db() as conn:
@@ -216,13 +218,13 @@ def login():
     if not user or not user['active'] or not pw_ok(str(data['password']), user['password_hash']): return bad('Invalid username or password.', 401)
     token = token_for(user)
     audit('login','user',user['id'],'Successful login')
-    return jsonify(token=token, user={'id':user['id'],'full_name':user['full_name'],'username':user['username'],'role':user['role'],'branch_id':user['branch_id'],'branch_name':user['branch_name']})
+    return jsonify(token=token, user={'id':user['id'],'full_name':user['full_name'],'username':user['username'],'role':user['role'],'branch_id':user['branch_id'],'branch_name':user['branch_name'],'must_change_password':user.get('must_change_password',False)})
 
 @app.get('/api/me')
 @require_roles(*ALL_READ_ROLES)
 def me():
     u=g.user
-    return jsonify(user={'id':u['id'],'full_name':u['full_name'],'username':u['username'],'role':u['role'],'branch_id':u['branch_id'],'branch_name':u['branch_name']})
+    return jsonify(user={'id':u['id'],'full_name':u['full_name'],'username':u['username'],'role':u['role'],'branch_id':u['branch_id'],'branch_name':u['branch_name'],'must_change_password':u['must_change_password']})
 
 @app.get('/api/branches')
 @require_roles(*ALL_READ_ROLES)
@@ -247,18 +249,61 @@ def user_create():
     d=get_json()
     if not all(d.get(k) for k in ('full_name','username','password','role')): return bad('Full name, username, password and role are required.')
     if d['role'] not in ROLES: return bad('Invalid role.')
-    if len(str(d['password'])) < 12: return bad('Use a password of at least 12 characters.')
+    if len(str(d['password'])) < 8: return bad('Use a password of at least 8 characters.')
     branch_id=d.get('branch_id') or None
     try:
         with db() as conn:
-            row=conn.execute('INSERT INTO users(full_name,username,password_hash,role,branch_id) VALUES(%s,%s,%s,%s,%s) RETURNING id,full_name,username,role,branch_id,active,created_at', (d['full_name'].strip(),d['username'].strip().lower(),pw_hash(str(d['password'])),d['role'],branch_id)).fetchone()
+            row=conn.execute('INSERT INTO users(full_name,username,password_hash,role,branch_id,must_change_password) VALUES(%s,%s,%s,%s,%s,TRUE) RETURNING id,full_name,username,role,branch_id,active,created_at', (d['full_name'].strip(),d['username'].strip().lower(),pw_hash(str(d['password'])),d['role'],branch_id)).fetchone()
         audit('create','user',row['id'],f"{row['username']} / {row['role']}"); return jsonify(user=row),201
     except psycopg.errors.UniqueViolation: return bad('Username already exists.',409)
+
+@app.post('/api/auth/change-password')
+@require_roles(*ALL_READ_ROLES)
+def change_password():
+    d=get_json(); current=str(d.get('current_password','')); new=str(d.get('new_password',''))
+    if len(new)<12: return bad('New password must contain at least 8 characters.')
+    with db() as conn:
+        row=conn.execute('SELECT password_hash FROM users WHERE id=%s',(g.user['id'],)).fetchone()
+        if not row or not pw_ok(current,row['password_hash']): return bad('Current or temporary password is incorrect.',401)
+        conn.execute('UPDATE users SET password_hash=%s,must_change_password=FALSE WHERE id=%s',(pw_hash(new),g.user['id']))
+    audit('change_password','user',g.user['id'],'User changed password')
+    return jsonify(message='Password changed successfully.',must_change_password=False)
+
+@app.post('/api/auth/forgot-password')
+def forgot_password():
+    username=str(get_json().get('username','')).strip().lower()
+    if not username: return bad('Enter your username to submit a password-reset request.')
+    # Generic response avoids confirming whether an account exists.
+    with db() as conn:
+        exists=conn.execute('SELECT id FROM users WHERE lower(username)=lower(%s) AND active=TRUE',(username,)).fetchone()
+        if exists:
+            conn.execute("INSERT INTO password_reset_requests(username) VALUES(%s)",(username,))
+    return jsonify(message='If the account exists, a reset request has been sent to the State Coordinator Admin. Contact the admin to receive a temporary password.')
+
+@app.get('/api/password-reset-requests')
+@require_roles(*ADMIN_ROLES)
+def password_reset_requests():
+    with db() as conn:
+        rows=conn.execute("SELECT id,username,status,created_at FROM password_reset_requests WHERE status='Pending' ORDER BY created_at DESC").fetchall()
+    return jsonify(requests=rows)
+
+@app.post('/api/users/<int:user_id>/reset-password')
+@require_roles(*ADMIN_ROLES)
+def admin_reset_password(user_id):
+    d=get_json(); temp=str(d.get('temporary_password',''))
+    if len(temp)<12: return bad('Temporary password must contain at least 8 characters.')
+    with db() as conn:
+        target=conn.execute('SELECT id,username FROM users WHERE id=%s',(user_id,)).fetchone()
+        if not target: return bad('User not found.',404)
+        conn.execute('UPDATE users SET password_hash=%s,must_change_password=TRUE WHERE id=%s',(pw_hash(temp),user_id))
+        conn.execute("UPDATE password_reset_requests SET status='Resolved',resolved_at=now() WHERE lower(username)=lower(%s) AND status='Pending'",(target['username'],))
+    audit('reset_password','user',user_id,'Admin reset password; change required at next login')
+    return jsonify(message='Temporary password set. The user must change it after signing in.')
 
 @app.get('/api/users')
 @require_roles(*ADMIN_ROLES)
 def users_list():
-    with db() as conn: rows=conn.execute('SELECT u.id,u.full_name,u.username,u.role,u.branch_id,u.active,u.created_at,b.name AS branch_name FROM users u LEFT JOIN branches b ON b.id=u.branch_id ORDER BY u.full_name').fetchall()
+    with db() as conn: rows=conn.execute('SELECT u.id,u.full_name,u.username,u.role,u.branch_id,u.active,u.must_change_password,u.created_at,b.name AS branch_name FROM users u LEFT JOIN branches b ON b.id=u.branch_id ORDER BY u.full_name').fetchall()
     return jsonify(users=rows)
 
 @app.patch('/api/users/<int:user_id>')
