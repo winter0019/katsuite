@@ -815,3 +815,89 @@ table {
     transition-duration: 0.01ms !important;
   }
 }
+
+
+
+/* Compact, comfortable login card sizing */
+.login-wrap,
+.login-page,
+.login-layout {
+  padding: clamp(12px, 3vh, 28px) 16px;
+}
+
+.login-card,
+.login-panel,
+.auth-card,
+.login-box {
+  width: min(100%, 520px);
+  max-width: 520px;
+  margin-inline: auto;
+}
+
+.login-card .login-brand,
+.login-panel .login-brand,
+.auth-card .login-brand,
+.login-box .login-brand {
+  padding: 22px 24px;
+}
+
+.login-card .login-form,
+.login-panel .login-form,
+.auth-card .login-form,
+.login-box .login-form {
+  padding: 24px 28px;
+}
+
+.login-card h1,
+.login-panel h1,
+.auth-card h1,
+.login-box h1 {
+  font-size: clamp(1.65rem, 3vw, 2.15rem);
+  line-height: 1.15;
+}
+
+.login-card input,
+.login-panel input,
+.auth-card input,
+.login-box input {
+  min-height: 48px;
+}
+
+@media (min-width: 641px) {
+  .login-card,
+  .login-panel,
+  .auth-card,
+  .login-box {
+    max-width: 500px;
+  }
+}
+
+@media (max-width: 640px) {
+  .login-wrap,
+  .login-page,
+  .login-layout {
+    padding: 12px;
+  }
+
+  .login-card,
+  .login-panel,
+  .auth-card,
+  .login-box {
+    width: 100%;
+    max-width: 420px;
+  }
+
+  .login-card .login-brand,
+  .login-panel .login-brand,
+  .auth-card .login-brand,
+  .login-box .login-brand {
+    padding: 18px 16px;
+  }
+
+  .login-card .login-form,
+  .login-panel .login-form,
+  .auth-card .login-form,
+  .login-box .login-form {
+    padding: 20px 18px;
+  }
+}
