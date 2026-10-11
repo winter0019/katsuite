@@ -28,5 +28,17 @@ $('#logoutBtn').onclick=()=>{token='';currentUser=null;sessionStorage.removeItem
 
 // Reference-inspired login and navigation controls
 document.querySelector('#togglePassword')?.addEventListener('click',()=>{const p=document.querySelector('#password');if(!p)return;const visible=p.type==='password';p.type=visible?'text':'password';document.querySelector('#togglePassword').textContent=visible?'Hide':'Show';});
-document.querySelector('#menuToggle')?.addEventListener('click',()=>document.querySelector('#appShell')?.classList.toggle('menu-open'));
-document.querySelectorAll('.sidebar .nav-link').forEach(el=>el.addEventListener('click',()=>document.querySelector('#appShell')?.classList.remove('menu-open')));
+const menuToggle=document.querySelector('#menuToggle');
+const appShell=document.querySelector('#appShell');
+function setMobileMenu(open){
+  appShell?.classList.toggle('menu-open',open);
+  menuToggle?.setAttribute('aria-expanded',String(open));
+  menuToggle?.setAttribute('aria-label',open?'Close navigation':'Open navigation');
+  document.body.classList.toggle('mobile-menu-open',open);
+}
+menuToggle?.setAttribute('aria-expanded','false');
+menuToggle?.addEventListener('click',()=>setMobileMenu(!appShell?.classList.contains('menu-open')));
+document.querySelectorAll('.sidebar .nav-link').forEach(el=>el.addEventListener('click',()=>setMobileMenu(false)));
+document.addEventListener('click',e=>{if(appShell?.classList.contains('menu-open')&&!e.target.closest('.sidebar')&&!e.target.closest('#menuToggle'))setMobileMenu(false)});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')setMobileMenu(false)});
+window.addEventListener('resize',()=>{if(window.innerWidth>720)setMobileMenu(false)});
