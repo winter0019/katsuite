@@ -321,24 +321,66 @@ def file_detail(file_id):
         moves=conn.execute('SELECT * FROM movements WHERE file_id=%s ORDER BY dispatched_at DESC,id DESC',(file_id,)).fetchall()
     return jsonify(file=f,movements=moves)
 
+def next_file_destinations(conn, user):
+    role = user['role']
+    office = (user.get('branch_name') or '').strip()
+    if role in ('Central Registry', 'Registry Officer'):
+        if not is_central_registry(user):
+            return []
+        # Direct collection is allowed for LGIs, ZIs, branches/units and State Coordinator.
+        return [r['name'] for r in conn.execute(
+            "SELECT name FROM branches WHERE active=TRUE AND name <> 'Central Registry' ORDER BY name"
+        ).fetchall()]
+    if role == 'Local Government Inspector':
+        zone = conn.execute("SELECT location FROM branches WHERE name=%s AND branch_type='LGA Office'", (office,)).fetchone()
+        if not zone:
+            return []
+        return [r['name'] for r in conn.execute(
+            "SELECT name FROM branches WHERE branch_type='Zonal Office' AND name=%s", (zone['location'],)
+        ).fetchall()]
+    if role == 'Zonal Inspector':
+        return [r['name'] for r in conn.execute(
+            "SELECT name FROM branches WHERE branch_type='Secretariat Branch' AND active=TRUE ORDER BY name"
+        ).fetchall()]
+    if role == 'Branch Head':
+        return ['State Coordinator Office']
+    return []
+
+
 @app.post('/api/files/<int:file_id>/dispatch')
-@require_roles('Central Registry', 'Registry Officer')
+@require_roles('Central Registry', 'Registry Officer', 'Local Government Inspector', 'Zonal Inspector', 'Branch Head')
 def dispatch_file(file_id):
-    if not is_central_registry(g.user): return bad('Only Central Registry staff may dispatch files.',403)
-    d=get_json()
-    if not d.get('to_location') or not d.get('recipient'): return bad('Destination and receiving officer are required.')
+    d = get_json()
+    destination = (d.get('to_location') or '').strip()
+    recipient = (d.get('recipient') or '').strip()
+    if not destination or not recipient:
+        return bad('Destination and receiving officer are required.')
     with db() as conn:
-        f=conn.execute('SELECT * FROM files WHERE id=%s AND archived=FALSE FOR UPDATE',(file_id,)).fetchone()
-        if not f: return bad('File not found.',404)
-        if f['status']=='In Circulation': return bad('This file is already in circulation. Receive or return it before dispatching again.',409)
-        due=d.get('due_at') or None
-        m=conn.execute('''INSERT INTO movements(file_id,action,from_location,to_location,sender,recipient,due_at,remarks,created_by)
-          VALUES(%s,'DISPATCHED',%s,%s,%s,%s,%s,%s,%s) RETURNING id''',(file_id,f['current_location'],d['to_location'].strip(),g.user['full_name'],d['recipient'].strip(),due,d.get('remarks',''),g.user['id'])).fetchone()
-        conn.execute("UPDATE files SET current_location=%s,current_holder=%s,status='In Transit',due_at=%s WHERE id=%s",(d['to_location'].strip(),d['recipient'].strip(),due,file_id))
-    audit('dispatch','file',file_id,f"to={d['to_location']}; recipient={d['recipient']}"); return jsonify(message='File dispatch recorded. Awaiting receipt acknowledgement.',movement_id=m['id']),201
+        f = conn.execute('SELECT * FROM files WHERE id=%s AND archived=FALSE FOR UPDATE', (file_id,)).fetchone()
+        if not f:
+            return bad('File not found.', 404)
+        role = g.user['role']
+        current_location = (f['current_location'] or '').strip()
+        if role in ('Central Registry', 'Registry Officer') and not is_central_registry(g.user):
+            return bad('Only Central Registry staff may dispatch files from Central Registry.', 403)
+        if current_location.casefold() != (g.user.get('branch_name') or '').strip().casefold():
+            return bad('Your office does not currently hold this file.', 403)
+        if f['status'] == 'In Transit' or f['status'] == 'Archived':
+            return bad('This file is in transit or archived and cannot be forwarded.', 409)
+        allowed = next_file_destinations(conn, g.user)
+        if destination.casefold() not in {x.casefold() for x in allowed}:
+            return bad('This destination is not permitted in the file movement workflow.', 403)
+        due = d.get('due_at') or None
+        m = conn.execute('''INSERT INTO movements(file_id,action,from_location,to_location,sender,recipient,due_at,remarks,created_by)
+          VALUES(%s,'DISPATCHED',%s,%s,%s,%s,%s,%s,%s) RETURNING id''',
+          (file_id, current_location, destination, g.user['full_name'], recipient, due, d.get('remarks',''), g.user['id'])).fetchone()
+        conn.execute("UPDATE files SET current_location=%s,current_holder=%s,status='In Transit',due_at=%s WHERE id=%s",
+                     (destination, recipient, due, file_id))
+    audit('dispatch','file',file_id,f"from={current_location}; to={destination}; recipient={recipient}")
+    return jsonify(message='File dispatch recorded. Awaiting physical receipt acknowledgement.', movement_id=m['id']), 201
 
 @app.post('/api/movements/<int:movement_id>/acknowledge')
-@require_roles('Central Registry', 'Registry Officer', 'Branch Head', 'Zonal Inspector', 'State Coordinator Admin')
+@require_roles('Central Registry', 'Registry Officer', 'Branch Head', 'Zonal Inspector', 'Local Government Inspector', 'State Coordinator Admin')
 def acknowledge_movement(movement_id):
     d=get_json()
     with db() as conn:
@@ -347,10 +389,14 @@ def acknowledge_movement(movement_id):
         role = g.user['role']
         assigned_office = (g.user.get('branch_name') or '').strip()
         destination = (m['to_location'] or '').strip()
-        if role in ('Central Registry', 'Registry Officer') and role == 'Central Registry' and destination != 'Central Registry':
-            return bad('Central Registry may acknowledge only deliveries addressed to Central Registry.',403)
-        if role in ('Registry Officer', 'Branch Head', 'Zonal Inspector', 'State Coordinator Admin') and destination != assigned_office:
-            return bad('You may acknowledge only deliveries addressed to your assigned office.',403)
+        if role in ('Central Registry', 'Registry Officer'):
+            if not is_central_registry(g.user) or destination.casefold() != 'central registry':
+                return bad('Only Central Registry staff may acknowledge deliveries addressed to Central Registry.', 403)
+        elif role == 'State Coordinator Admin':
+            if destination.casefold() != 'state coordinator office':
+                return bad('The delivery is not addressed to the State Coordinator Office.', 403)
+        elif not assigned_office or destination.casefold() != assigned_office.casefold():
+            return bad('You may acknowledge only deliveries addressed to your assigned office.', 403)
         if m['acknowledged_at']: return bad('This delivery has already been acknowledged.',409)
         conn.execute('UPDATE movements SET acknowledged_at=now(),remarks=CASE WHEN %s<>\'\' THEN remarks || E\'\\n\' || %s ELSE remarks END WHERE id=%s',(d.get('remarks',''),d.get('remarks',''),movement_id))
         conn.execute("UPDATE files SET status='In Circulation',current_location=%s,current_holder=%s WHERE id=%s",(m['to_location'],m['recipient'],m['file_id']))
