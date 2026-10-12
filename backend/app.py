@@ -8,8 +8,36 @@ from psycopg.rows import dict_row
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', '')
-FRONTEND_ORIGIN = os.environ.get('FRONTEND_ORIGIN', '*')
-CORS(app, resources={r"/api/*": {"origins": [x.strip() for x in FRONTEND_ORIGIN.split(',') if x.strip()] or ['*']}})
+FRONTEND_ORIGIN = os.environ.get('FRONTEND_ORIGIN', 'https://katsuite.netlify.app')
+ALLOWED_ORIGINS = [x.strip().rstrip('/') for x in FRONTEND_ORIGIN.split(',') if x.strip()]
+if not ALLOWED_ORIGINS:
+    ALLOWED_ORIGINS = ['https://katsuite.netlify.app']
+CORS(
+    app,
+    resources={r"/api/*": {
+        "origins": ALLOWED_ORIGINS,
+        "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        "allow_headers": ["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
+        "supports_credentials": False,
+        "max_age": 86400,
+    }},
+    vary_header=True,
+)
+
+@app.before_request
+def handle_cors_preflight():
+    # CORS preflight must not require authentication or database access.
+    if request.method == 'OPTIONS' and request.path.startswith('/api/'):
+        response = app.make_response(('', 204))
+        origin = request.headers.get('Origin', '').rstrip('/')
+        if '*' in ALLOWED_ORIGINS or origin in ALLOWED_ORIGINS:
+            response.headers['Access-Control-Allow-Origin'] = '*' if '*' in ALLOWED_ORIGINS else origin
+            response.headers['Vary'] = 'Origin'
+            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+            requested_headers = request.headers.get('Access-Control-Request-Headers', 'Authorization, Content-Type')
+            response.headers['Access-Control-Allow-Headers'] = requested_headers
+            response.headers['Access-Control-Max-Age'] = '86400'
+        return response
 
 ROLES = {'State Coordinator Admin', 'Central Registry', 'Branch Head', 'Registry Officer', 'Zonal Inspector', 'Local Government Inspector', 'Read-only Auditor'}
 ADMIN_ROLES = {'State Coordinator Admin'}
@@ -188,6 +216,8 @@ def get_json(): return request.get_json(silent=True) or {}
 
 @app.before_request
 def boot():
+    if request.method == 'OPTIONS':
+        return ('', 204)
     if request.path.startswith('/api/') and request.path != '/api/health':
         try: init_db()
         except Exception as exc: app.logger.exception('Database initialization failed')
