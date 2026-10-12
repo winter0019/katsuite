@@ -149,7 +149,9 @@ def office_scope_sql(user, alias='f'):
     if role == 'Local Government Inspector':
         if not office:
             return 'FALSE', []
-        return f"{alias}.current_location=%s", [office]
+        # LGI may see files physically held by the office, plus files specifically
+        # dispatched to this office that are still awaiting physical acknowledgement.
+        return (f"({alias}.current_location=%s OR EXISTS (SELECT 1 FROM movements lgi_m WHERE lgi_m.file_id={alias}.id AND lgi_m.action='DISPATCHED' AND lgi_m.to_location=%s AND lgi_m.acknowledged_at IS NULL AND lgi_m.returned_at IS NULL))", [office, office])
 
     # Branches see files currently held by their assigned branch/unit.
     if role == 'Branch Head':
@@ -389,7 +391,10 @@ def state_coordinator_dashboard():
 @app.get('/api/dashboard')
 @require_roles(*ALL_READ_ROLES)
 def dashboard():
-    scope, scope_args = office_scope_sql(g.user, 'f')
+    user = g.user
+    scope, scope_args = office_scope_sql(user, 'f')
+    office = (user.get('branch_name') or '').strip()
+    is_lgi = user['role'] == 'Local Government Inspector'
     with db() as conn:
         counts = conn.execute("""SELECT
           count(*) AS total_files,
@@ -399,14 +404,19 @@ def dashboard():
           count(*) FILTER (WHERE f.status='In Transit') AS in_transit,
           count(*) FILTER (WHERE f.status='In Circulation' AND f.due_at < now()) AS overdue
           FROM files f WHERE f.archived=FALSE AND """+scope, scope_args).fetchone()
-          
-        unack = conn.execute("SELECT count(*) AS n FROM movements m JOIN files f ON f.id=m.file_id WHERE m.action='DISPATCHED' AND m.acknowledged_at IS NULL AND m.returned_at IS NULL AND "+scope, scope_args).fetchone()['n']
+        if is_lgi:
+            collected = conn.execute("SELECT count(DISTINCT m.file_id) AS n FROM movements m WHERE m.action='DISPATCHED' AND m.to_location=%s AND m.acknowledged_at::date=current_date", (office,)).fetchone()['n']
+            unack = conn.execute("SELECT count(DISTINCT m.file_id) AS n FROM movements m JOIN files f ON f.id=m.file_id WHERE m.action='DISPATCHED' AND m.to_location=%s AND m.acknowledged_at IS NULL AND m.returned_at IS NULL AND f.archived=FALSE", (office,)).fetchone()['n']
+        else:
+            collected = counts['registered_today']
+            unack = conn.execute("SELECT count(*) AS n FROM movements m JOIN files f ON f.id=m.file_id WHERE m.action='DISPATCHED' AND m.acknowledged_at IS NULL AND m.returned_at IS NULL AND "+scope, scope_args).fetchone()['n']
         byloc = conn.execute('SELECT f.current_location AS location,count(*) AS count FROM files f WHERE f.archived=FALSE AND '+scope+' GROUP BY f.current_location ORDER BY count DESC,f.current_location', scope_args).fetchall()
         recent = conn.execute("""SELECT f.id,f.reference_no,f.title,f.state_code,f.current_location,f.current_holder,f.status,f.registered_at,f.due_at,
-           CASE WHEN f.status='In Circulation' AND f.due_at < now() THEN 'Overdue' ELSE f.status END AS computed_status
-           FROM files f WHERE f.archived=FALSE AND """+scope+' ORDER BY f.registered_at DESC LIMIT 8', scope_args).fetchall()
-           
-    return jsonify(counts={**counts, 'unacknowledged': unack}, by_location=byloc, recent=recent, generated_at=datetime.now(timezone.utc).isoformat())
+           CASE WHEN f.status='In Circulation' AND f.due_at < now() THEN 'Overdue'
+                WHEN EXISTS (SELECT 1 FROM movements pm WHERE pm.file_id=f.id AND pm.action='DISPATCHED' AND pm.to_location=%s AND pm.acknowledged_at IS NULL AND pm.returned_at IS NULL) THEN 'Awaiting acknowledgement'
+                ELSE f.status END AS computed_status
+           FROM files f WHERE f.archived=FALSE AND """+scope+' ORDER BY f.registered_at DESC LIMIT 8', ([office] if is_lgi else [''] ) + scope_args).fetchall()
+    return jsonify(counts={**counts, 'collected_today': collected, 'unacknowledged': unack}, by_location=byloc, recent=recent, generated_at=datetime.now(timezone.utc).isoformat())
 
 
 @app.get('/api/audit')
