@@ -554,7 +554,9 @@ tbody tr:hover { background: #fafcfb; }
 .brandbar-mark strong{display:block;font-size:16px;color:#fff}
 .brandbar-mark small{display:block;margin-top:5px;color:#b6d5c8;font-size:12px}
 .brandbar-mark i{height:46px;width:3px;background:#e4cb45;margin-left:6px}
-.nysc-emblem.mini{width:39px;height:39px;margin:0;flex:none}
+.nysc-emblem.mini{width:42px;height:42px;margin:0;flex:none;overflow:hidden;background:#fff}
+.nysc-emblem.mini img{width:100%;height:100%;object-fit:contain;padding:2px}
+.nysc-emblem.mini .emblem-fallback{font-size:7px}
 .nysc-emblem.mini .emblem-shield{width:23px;height:26px}
 .menu-toggle{width:44px;height:44px;border:1px solid #ffffff35;border-radius:11px;background:transparent;color:white;font-size:22px}
 .sidebar{position:absolute;z-index:10;top:86px;left:0;height:calc(100vh - 86px);min-height:0;width:250px;transform:translateX(-105%);transition:transform .2s ease;box-shadow:12px 18px 28px #052e2420}
